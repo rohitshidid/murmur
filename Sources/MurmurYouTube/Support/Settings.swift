@@ -63,8 +63,8 @@ final class Settings {
     }
 
     private init() {
-        let raw = defaults.string(forKey: Keys.pushToTalkKey) ?? PushToTalkKey.rightOption.rawValue
-        pushToTalkKey = PushToTalkKey(rawValue: raw) ?? .rightOption
+        let raw = defaults.string(forKey: Keys.pushToTalkKey) ?? PushToTalkKey.rightCommand.rawValue
+        pushToTalkKey = PushToTalkKey(rawValue: raw) ?? .rightCommand
         // Apple by default: no download, no dependency, live text while speaking.
         engine = SpeechEngineChoice(rawValue: defaults.string(forKey: Keys.engine) ?? "") ?? .apple
         cleanupEnabled = defaults.object(forKey: Keys.cleanupEnabled) as? Bool ?? true

@@ -57,7 +57,7 @@ final class HotkeyMonitor {
     private var runLoopSource: CFRunLoopSource?
     private var isPressed = false
 
-    var key: PushToTalkKey = .rightOption
+    var key: PushToTalkKey = .rightCommand
     var onPress: (() -> Void)?
     var onRelease: (() -> Void)?
 
