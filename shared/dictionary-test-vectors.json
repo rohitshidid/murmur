@@ -13,9 +13,16 @@
     "  3. Longest match first - a longer trigger wins over a shorter overlapping one.",
     "  4. Glued words match   - parts may be separated by any number of spaces or hyphens,",
     "                           including none at all.",
-    "  5. Disabled is inert   - a disabled entry changes nothing."
+    "  5. Disabled is inert   - a disabled entry changes nothing.",
+    "  6. Corrections, then snippets - all correction rules run before any snippet rule.",
+    "                           A correction repairs what the engine misheard, so it must",
+    "                           run before a snippet trigger is matched; and a snippet body",
+    "                           is text the user typed exactly as they meant it, so no",
+    "                           correction may rewrite what an expansion produced.",
+    "",
+    "expectedCorrections[].kind is \"correction\" when absent."
   ],
-  "version": 1,
+  "version": 2,
   "cases": [
     {
       "name": "basic phrase replacement",
@@ -346,6 +353,169 @@
         {
           "to": "Café Racer",
           "count": 1
+        }
+      ]
+    },
+    {
+      "name": "snippet expands a spoken trigger into a block",
+      "entries": [
+        {
+          "kind": "snippet",
+          "hear": "my address",
+          "write": "12 Main Street, Pune"
+        }
+      ],
+      "input": "Send it to my address please.",
+      "expected": "Send it to 12 Main Street, Pune please.",
+      "expectedCorrections": [
+        {
+          "to": "12 Main Street, Pune",
+          "count": 1,
+          "kind": "snippet"
+        }
+      ]
+    },
+    {
+      "name": "snippet body may span several lines",
+      "entries": [
+        {
+          "kind": "snippet",
+          "hear": "my signoff",
+          "write": "Thanks,\nRohit\nMurmur"
+        }
+      ],
+      "input": "my signoff",
+      "expected": "Thanks,\nRohit\nMurmur",
+      "expectedCorrections": [
+        {
+          "to": "Thanks,\nRohit\nMurmur",
+          "count": 1,
+          "kind": "snippet"
+        }
+      ]
+    },
+    {
+      "name": "a correction repairs a mishearing before the snippet trigger is matched",
+      "$comment": "The ordering rule earning its keep: without corrections running first, the misheard trigger never fires the snippet.",
+      "entries": [
+        {
+          "kind": "correction",
+          "hear": "cignature",
+          "write": "signature"
+        },
+        {
+          "kind": "snippet",
+          "hear": "my signature",
+          "write": "Rohit Shidid"
+        }
+      ],
+      "input": "Add my cignature here.",
+      "expected": "Add Rohit Shidid here.",
+      "expectedCorrections": [
+        {
+          "to": "signature",
+          "count": 1,
+          "kind": "correction"
+        },
+        {
+          "to": "Rohit Shidid",
+          "count": 1,
+          "kind": "snippet"
+        }
+      ]
+    },
+    {
+      "name": "a correction never rewrites text produced by a snippet",
+      "$comment": "The other half of the ordering rule. The body is what the user typed; a correction rule must not second-guess it.",
+      "entries": [
+        {
+          "kind": "snippet",
+          "hear": "my tagline",
+          "write": "built with cloud code"
+        },
+        {
+          "kind": "correction",
+          "hear": "cloud code",
+          "write": "Claude Code"
+        }
+      ],
+      "input": "my tagline",
+      "expected": "built with cloud code",
+      "expectedCorrections": [
+        {
+          "to": "built with cloud code",
+          "count": 1,
+          "kind": "snippet"
+        }
+      ]
+    },
+    {
+      "name": "snippet trigger is a whole match only",
+      "entries": [
+        {
+          "kind": "snippet",
+          "hear": "sig",
+          "write": "Regards, Rohit"
+        }
+      ],
+      "input": "The signal was weak.",
+      "expected": "The signal was weak.",
+      "expectedCorrections": []
+    },
+    {
+      "name": "a disabled snippet changes nothing",
+      "entries": [
+        {
+          "kind": "snippet",
+          "hear": "my address",
+          "write": "12 Main Street",
+          "isEnabled": false
+        }
+      ],
+      "input": "Send it to my address.",
+      "expected": "Send it to my address.",
+      "expectedCorrections": []
+    },
+    {
+      "name": "longest snippet trigger wins over a shorter overlapping one",
+      "entries": [
+        {
+          "kind": "snippet",
+          "hear": "my work address",
+          "write": "1 Office Park"
+        },
+        {
+          "kind": "snippet",
+          "hear": "my address",
+          "write": "12 Main Street"
+        }
+      ],
+      "input": "Use my work address.",
+      "expected": "Use 1 Office Park.",
+      "expectedCorrections": [
+        {
+          "to": "1 Office Park",
+          "count": 1,
+          "kind": "snippet"
+        }
+      ]
+    },
+    {
+      "name": "a snippet trigger matches glued and hyphenated, like a correction",
+      "entries": [
+        {
+          "kind": "snippet",
+          "hear": "my address",
+          "write": "12 Main Street"
+        }
+      ],
+      "input": "Send to my-address now.",
+      "expected": "Send to 12 Main Street now.",
+      "expectedCorrections": [
+        {
+          "to": "12 Main Street",
+          "count": 1,
+          "kind": "snippet"
         }
       ]
     }

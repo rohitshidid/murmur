@@ -5,6 +5,7 @@ import SwiftUI
 struct SettingsWindow: View {
     @Bindable var controller: DictationController
     @State private var settings = Settings.shared
+    @State private var isEditingProfiles = false
 
     var body: some View {
         ZStack {
@@ -32,6 +33,14 @@ struct SettingsWindow: View {
                     }
                     note("Hold this key anywhere to dictate. The window's Record button works "
                         + "regardless of what's focused.")
+
+                    Toggle(isOn: $settings.latchOnTap) {
+                        Silkscreen(text: "Tap to lock on")
+                    }
+                    .toggleStyle(.switch)
+                    .onChange(of: settings.latchOnTap) { _, _ in controller.reloadHotkey() }
+                    note("A quick tap keeps the mic open until you tap again; holding still "
+                        + "works as push-to-talk. ⌥⌘Z takes back the last thing dictated.")
                 }
 
                 panel(label: "Model") {
@@ -64,13 +73,21 @@ struct SettingsWindow: View {
                     .toggleStyle(.switch)
                     note("Strips fillers, fixes spacing and punctuation. The dictionary's "
                         + "corrections run either way.")
+
+                    HStack(spacing: DS.Space.snug) {
+                        TransportKey(title: "Tone by app…") { isEditingProfiles = true }
+                        Spacer()
+                    }
+                    note("Smart cleanup matches the app you're dictating into — longer "
+                        + "sentences in Mail, one line in Slack, verbatim in an editor.")
                 }
 
                 Spacer()
             }
             .padding(DS.Space.panel)
         }
-        .frame(width: 520, height: 460)
+        .frame(width: 520, height: 620)
+        .sheet(isPresented: $isEditingProfiles) { ProfilesPanel() }
     }
 
     private func panel<Content: View>(

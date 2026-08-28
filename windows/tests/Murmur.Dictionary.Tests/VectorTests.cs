@@ -37,16 +37,26 @@ public sealed class VectorTests
     {
         public DictionaryEntry ToEntry() => new()
         {
-            Kind = Kind.Equals("correction", StringComparison.OrdinalIgnoreCase)
-                ? EntryKind.Correction
-                : EntryKind.Term,
+            Kind = Kind.ToUpperInvariant() switch
+            {
+                "CORRECTION" => EntryKind.Correction,
+                "SNIPPET" => EntryKind.Snippet,
+                _ => EntryKind.Term,
+            },
             Write = Write,
             Hear = Hear ?? string.Empty,
             IsEnabled = IsEnabled ?? true,
         };
     }
 
-    public sealed record ExpectedCorrection(string To, int Count);
+    /// <summary>An expected hit. <c>Kind</c> is "correction" when the vector omits it.</summary>
+    public sealed record ExpectedCorrection(string To, int Count, string? Kind)
+    {
+        public CorrectionKind ExpectedKind =>
+            string.Equals(Kind, "snippet", StringComparison.OrdinalIgnoreCase)
+                ? CorrectionKind.Snippet
+                : CorrectionKind.Correction;
+    }
 
     private static Suite Load()
     {
@@ -94,6 +104,7 @@ public sealed class VectorTests
             var match = applied.SingleOrDefault(a => a.To == expected.To);
             match.ShouldNotBeNull($"case '{testCase.Name}': expected a correction to “{expected.To}”");
             match.Count.ShouldBe(expected.Count, $"case '{testCase.Name}': count for “{expected.To}”");
+            match.Kind.ShouldBe(expected.ExpectedKind, $"case '{testCase.Name}': kind for “{expected.To}”");
         }
     }
 
@@ -138,4 +149,31 @@ public sealed class VectorTests
     [Fact]
     public void A_distinctive_phrase_is_not_flagged() =>
         DictionaryWarning.Check(DictionaryEntry.Correction("clawed code", "Claude Code")).ShouldBeEmpty();
+
+    [Fact]
+    public void A_snippets_own_trigger_is_checked_for_misfires_too() =>
+        DictionaryWarning.Check(DictionaryEntry.Snippet("my", "12 Main Street")).ShouldNotBeEmpty();
+
+    [Fact]
+    public void A_snippet_body_survives_a_round_trip_through_the_file_format()
+    {
+        const string Body = "Thanks,\nRohit\tX\\Y";
+
+        var escaped = DictionaryEntry.Escape(Body);
+
+        escaped.ShouldNotContain("\n");
+        DictionaryEntry.Unescape(escaped).ShouldBe(Body);
+    }
+
+    [Fact]
+    public void Snippet_bodies_are_kept_out_of_the_engine_bias_list()
+    {
+        DictionaryEntry[] entries =
+        [
+            DictionaryEntry.Term("Anthropic"),
+            DictionaryEntry.Snippet("my address", "12 Main Street, Pune"),
+        ];
+
+        DictionaryCorrector.BiasPhrases(entries).ShouldBe(["Anthropic"]);
+    }
 }

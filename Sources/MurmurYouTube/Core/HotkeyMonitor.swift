@@ -57,9 +57,29 @@ final class HotkeyMonitor {
     private var runLoopSource: CFRunLoopSource?
     private var isPressed = false
 
+    /// When the current press went down, used to tell a tap from a hold.
+    private var pressedAt: Date?
+    /// Set when a press was consumed to end a latched session, so the release that follows
+    /// it isn't read as a fresh tap and immediately re-latches.
+    private var ignoreNextRelease = false
+
+    /// A press shorter than this is a *tap*; anything longer is a hold.
+    ///
+    /// Tuned to sit above a deliberate quick tap and well below the shortest useful
+    /// utterance — nobody dictates a word in under a third of a second, so a press this
+    /// short is a gesture, not speech.
+    private static let tapThreshold: TimeInterval = 0.35
+
+    /// True while a tap has locked recording on. Read by the HUD.
+    private(set) var isLatched = false
+
     var key: PushToTalkKey = .rightCommand
+    /// Whether a quick tap latches recording on. Mirrors `Settings.latchOnTap`.
+    var latchOnTap = true
     var onPress: (() -> Void)?
     var onRelease: (() -> Void)?
+    /// Fired whenever `isLatched` changes, so the HUD can show the locked state.
+    var onLatchChange: ((Bool) -> Void)?
 
     /// - Returns: `false` if the tap couldn't be created — almost always missing Accessibility permission.
     @discardableResult
@@ -114,6 +134,20 @@ final class HotkeyMonitor {
         tap = nil
         runLoopSource = nil
         isPressed = false
+        clearLatch()
+    }
+
+    /// Drops the latch without firing `onRelease`.
+    ///
+    /// For the paths that end a recording by some route other than the key — an error, a
+    /// cancel, the Stop button — after which a latched monitor would otherwise still think
+    /// it owned a live session and swallow the next press to "stop" it.
+    func clearLatch() {
+        pressedAt = nil
+        ignoreNextRelease = false
+        guard isLatched else { return }
+        isLatched = false
+        onLatchChange?(false)
     }
 
     // MARK: - Tap callback
@@ -132,8 +166,50 @@ final class HotkeyMonitor {
         guard nowPressed != isPressed else { return false }
         isPressed = nowPressed
 
-        if nowPressed { onPress?() } else { onRelease?() }
+        if nowPressed { keyWentDown() } else { keyWentUp() }
 
         return key.shouldConsumeEvent
+    }
+
+    /// Hold to talk; tap to lock on.
+    ///
+    /// The two gestures are told apart on *release*, by how long the key was held — which
+    /// is what lets push-to-talk stay instant. Deferring `onPress` until a double-tap
+    /// window elapsed would put 300ms of latency in front of every utterance, and the
+    /// beginning of a sentence is exactly the part you can't afford to clip.
+    private func keyWentDown() {
+        // While latched, a press is the stop gesture rather than the start of one.
+        if isLatched {
+            isLatched = false
+            ignoreNextRelease = true
+            onLatchChange?(false)
+            onRelease?()
+            return
+        }
+
+        pressedAt = Date()
+        onPress?()
+    }
+
+    private func keyWentUp() {
+        // The tail of the press that stopped a latched session.
+        if ignoreNextRelease {
+            ignoreNextRelease = false
+            return
+        }
+
+        let held = pressedAt.map { Date().timeIntervalSince($0) } ?? .greatestFiniteMagnitude
+        pressedAt = nil
+
+        // A tap keeps the mic open and hands control to the next press. Holding a key for a
+        // three-minute thought is the thing that stops people using push-to-talk for
+        // anything long.
+        if latchOnTap, held < Self.tapThreshold {
+            isLatched = true
+            onLatchChange?(true)
+            return
+        }
+
+        onRelease?()
     }
 }

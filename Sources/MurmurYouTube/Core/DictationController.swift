@@ -45,7 +45,11 @@ final class DictationController {
     /// Smoothed 0…1 mic level for the waveform.
     private(set) var level: Float = 0
 
+    /// True while a tap has locked the mic open. Drives the HUD's lock indicator.
+    private(set) var isLatched = false
+
     private let hotkey = HotkeyMonitor()
+    private let shortcuts = ShortcutMonitor()
     private let capture = AudioCapture()
     private let makeEngine: @Sendable () -> any TranscriptionEngine
 
@@ -89,13 +93,22 @@ final class DictationController {
     @discardableResult
     func activate() -> Bool {
         hotkey.key = Settings.shared.pushToTalkKey
+        hotkey.latchOnTap = Settings.shared.latchOnTap
         hotkey.onPress = { [weak self] in self?.beginDictation() }
         hotkey.onRelease = { [weak self] in self?.endDictation() }
+        hotkey.onLatchChange = { [weak self] latched in self?.isLatched = latched }
+
+        shortcuts.onUndo = { TextInjector.undoLast() }
+        // Both taps need the same grant, so a failure here is the same failure — reported
+        // once, by the push-to-talk tap, which is the one the user is waiting on.
+        shortcuts.start()
+
         return hotkey.start()
     }
 
     func deactivate() {
         hotkey.stop()
+        shortcuts.stop()
         cancelDictation()
     }
 
@@ -103,6 +116,7 @@ final class DictationController {
     @discardableResult
     func reloadHotkey() -> Bool {
         hotkey.stop()
+        shortcuts.stop()
         return activate()
     }
 
@@ -123,6 +137,8 @@ final class DictationController {
     /// finishing — otherwise every run would wait the full round trip end to end.
     func stopButtonRecording() {
         WisprTrigger.release()
+        hotkey.clearLatch()
+        isLatched = false
         endDictation()
     }
 
@@ -252,8 +268,11 @@ final class DictationController {
                 return
             }
 
+            // Resolved here rather than when the key went down: this is the moment before
+            // injection, so the app it reads is the app the text is actually going into.
+            let context = FormatContext.current()
             let cleaned = Settings.shared.cleanupEnabled
-                ? await activeFormatter.format(raw)
+                ? await activeFormatter.format(raw, context: context)
                 : raw
 
             // The dictionary runs last, and runs regardless of the cleanup setting. Biasing
@@ -274,6 +293,8 @@ final class DictationController {
     }
 
     private func cancelDictation() {
+        hotkey.clearLatch()
+        isLatched = false
         capture.stop()
         audioContinuation?.finish()
         audioContinuation = nil
@@ -416,6 +437,8 @@ final class DictationController {
 
     private func fail(_ message: String) {
         Log.app.error("\(message)")
+        hotkey.clearLatch()
+        isLatched = false
         capture.stop()
         audioContinuation?.finish()
         audioContinuation = nil

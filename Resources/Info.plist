@@ -45,6 +45,11 @@
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Murmur YouTube listens while you hold the push-to-talk key so it can turn your speech into text.</string>
+	<!-- Meeting mode taps system audio through CoreAudio so it can transcribe the other
+	     participants. Deliberately not ScreenCaptureKit, which would ask for Screen
+	     Recording — a far broader grant than a dictation app has any business holding. -->
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>Murmur YouTube records the audio your Mac is playing so it can transcribe the other people in a meeting.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Murmur YouTube transcribes your speech on-device to insert text where you're typing.</string>
 </dict>

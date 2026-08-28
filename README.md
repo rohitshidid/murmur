@@ -42,6 +42,18 @@ Then grant two permissions — neither is optional, and neither can be requested
 
 Restart Murmur YouTube after granting Accessibility. Then hold **Right ⌘** and talk.
 
+Two gestures on that key:
+
+| Gesture | What happens |
+|---|---|
+| **Hold** | Push-to-talk. Recording stops when you let go. |
+| **Tap** | Locks the mic open until you tap again. The HUD shows a lock. |
+| **⌥⌘Z** | Takes back the last thing dictated. |
+
+Tap-to-lock exists because holding a key down for a long thought is the thing that stops
+people dictating anything longer than a sentence. Turn it off in Settings if you'd rather
+have strict hold-to-talk.
+
 ### Why grants survive rebuilds here
 
 TCC stores a *code-signing requirement* per entry, not just a path. An ad-hoc signature
@@ -159,23 +171,35 @@ change.
 
 ---
 
+## Beyond dictation
+
+**Meeting mode.** A second capture path records your microphone and the Mac's own audio as
+two separate tracks, transcribes both, diarizes the remote one, and produces an attributed
+transcript with timestamps — exportable to Markdown, plain text, SRT or WebVTT. Keeping the
+tracks apart is what makes "You" exact: the diarizer only has to separate the remote voices
+from each other, never to pull your own voice out of a mixdown it dominates.
+
+System audio is captured with a **CoreAudio process tap**, not ScreenCaptureKit. `SCStream`
+needs far less code, but it is a screen-recording API and asks the user for Screen Recording
+permission — too broad a grant for a feature that only needs sound.
+
+**The audio is never kept.** A meeting is minutes of everyone in the room; the transcript is
+what the feature is for.
+
 ## Not built yet
 
-1. **LLM cleanup tier.** `RuleBasedFormatter` strips fillers, fixes spacing, capitalizes
-   sentences and adds terminal punctuation — genuinely useful, entirely deterministic. The
-   real win is a second `TextFormatter` backed by Apple's on-device Foundation Models
-   (macOS 26) for tone, list formatting, and honoring spoken corrections, with Claude as an
-   optional higher-quality tier.
-2. **Command Mode.** Select text, hold a second hotkey, say "make this more formal."
+1. **Command Mode.** Select text, hold a second hotkey, say "make this more formal."
    Needs AX read of `kAXSelectedTextAttribute` plus an LLM round-trip.
-3. **Personal dictionary.** Names and jargon the ASR keeps missing. `SpeechAnalyzer`
-   supports this through `AnalysisContext` / `SFCustomLanguageModelData`.
-4. **Branding.** `Brand` in `HUDView.swift` is a two-color placeholder gradient. App icon,
-   real palette, HUD motion design, onboarding.
-5. **Onboarding.** A first-run window that walks through both permissions instead of
+2. **File transcription.** Drop an audio or video file and get a transcript. The engine
+   protocol needs no changes — only a reader that yields `AudioChunk`s from `AVAssetReader`
+   instead of `AVAudioEngine`.
+3. **Multilingual.** `AppleSpeechEngine` pins `Locale.current` at init; per-utterance
+   language choice and auto-detection are not wired up.
+4. **Onboarding.** A first-run window that walks through the permissions instead of
    relying on the menu's "Grant…" items.
-6. **Developer ID signing + notarization.** Ends the TCC-reset churn and makes the app
-   distributable.
+5. **Developer ID signing + notarization.** Ends the TCC-reset churn and makes the app
+   distributable. Without a cert the `Makefile` falls back to ad-hoc signing, and **every
+   rebuild invalidates the Accessibility grant** — see below.
 
 ---
 

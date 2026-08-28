@@ -40,7 +40,7 @@ struct FoundationModelFormatter: TextFormatter {
         }
     }
 
-    func format(_ raw: String) async -> String {
+    func format(_ raw: String, context: FormatContext) async -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return trimmed }
 
@@ -50,8 +50,9 @@ struct FoundationModelFormatter: TextFormatter {
         }
 
         do {
+            let instruction = context.instruction
             let cleaned = try await withThrowingTaskGroup(of: String.self) { group in
-                group.addTask { try await Self.clean(trimmed) }
+                group.addTask { try await Self.clean(trimmed, instruction: instruction) }
                 group.addTask {
                     try await Task.sleep(for: timeout)
                     throw CleanupError.timedOut
@@ -96,7 +97,13 @@ struct FoundationModelFormatter: TextFormatter {
         }
     }
 
-    private static func clean(_ text: String) async throws -> String {
+    /// - Parameter instruction: the destination app's tone rule, or empty for the default.
+    ///
+    /// Appended *after* the fixed rules, and never allowed to replace them: the rule about
+    /// not answering the content is what stops a dictated question being helpfully
+    /// answered into the user's document, and no per-app tone is worth losing it.
+    private static func clean(_ text: String, instruction: String) async throws -> String {
+        let tone = instruction.trimmingCharacters(in: .whitespacesAndNewlines)
         let session = LanguageModelSession(instructions: """
             You clean up raw speech-to-text transcripts. You are a text processor, not an \
             assistant.
@@ -112,6 +119,7 @@ struct FoundationModelFormatter: TextFormatter {
             becomes "Send it Wednesday."
             - Preserve the speaker's wording, tone, and meaning. Do not summarize, expand, \
             translate, or improve the writing.
+            \(tone.isEmpty ? "" : "\nDestination:\n- " + tone)
             """)
 
         let response = try await session.respond(

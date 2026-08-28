@@ -80,15 +80,24 @@ invisible to SwiftUI's state graph. Don't "clean that up" into `@State`.
 and material token. **Views must not contain literal values.** If a component needs a number
 that isn't a token, add the token rather than inlining it.
 
-The direction is 1980s field recorders — Sony TC-D5, Marantz PMD, Nakamichi, Braun. Silver
-face in light appearance, black face in dark. Two rules that are not negotiable:
+The direction is quiet, modern macOS: flat surfaces, one hairline border, generous radii, a
+single indigo accent, and type doing most of the work. Four rules:
 
+- **One accent.** Indigo. Selection, focus and the level meter all borrow it.
 - **Red means recording.** Nothing else in the app is red.
-- **Amber and green are instrumentation only** — level meters, never UI chrome.
+- **Amber is instrumentation only** — the top of a level meter, never UI chrome.
+- **Two surfaces per screen at most.** A card inside a card inside a well is how a clean
+  layout turns to mud.
 
-Explicitly ruled out: neon, vaporwave, synthwave, purple/pink gradients, glowing text, chrome
-lettering, grid horizons. There are **no gradients anywhere**; depth comes from flat panels,
-hairline bevels and procedurally-drawn brushed grain.
+Depth comes from a soft shadow and a change of surface — a card is lighter than its backdrop,
+a well is darker. Explicitly ruled out: bevels, gloss, inner glows, brushed-metal grain,
+neon, and decorative gradients. The only gradient in the app is the HUD waveform.
+
+> This replaced an earlier skeuomorphic system modelled on 1980s field recorders. The
+> component names in `Equipment.swift` — `BrushedPanel`, `Silkscreen`, `TransportKey`,
+> `VUMeter`, `Well`, `DeckWindow` — are inherited from it and kept deliberately: every call
+> site in the app spells them, and renaming twenty views changes nothing a user can see.
+> Read them as "card", "small label", "button", "level meter", "recessed region", "row".
 
 ---
 

@@ -7,12 +7,25 @@ import Foundation
 /// formatter (Apple Foundation Models on-device, or Claude for the high-quality tier)
 /// is the point of keeping this behind a protocol.
 protocol TextFormatter: Sendable {
-    func format(_ raw: String) async -> String
+    /// - Parameter context: where the text is about to land. Deterministic formatters
+    ///   ignore it; a model-backed one uses it to match the destination's register.
+    func format(_ raw: String, context: FormatContext) async -> String
+}
+
+extension TextFormatter {
+    /// For call sites with no destination — tests, and the comparison window, which never
+    /// injects anywhere.
+    func format(_ raw: String) async -> String {
+        await format(raw, context: .none)
+    }
 }
 
 /// Deterministic, zero-latency cleanup. Good enough to be useful on its own and always
 /// the fallback when a model-backed formatter is unavailable or times out.
 struct RuleBasedFormatter: TextFormatter {
+    // Context is deliberately ignored: these rules are the same everywhere, and they are
+    // also the fallback when a model-backed pass fails — a fallback that behaved
+    // differently per app would make that failure harder to recognize, not easier.
     /// Standalone filler words, stripped only when surrounded by word boundaries.
     private static let fillers = ["um", "uh", "erm", "uhm", "hmm", "mhm"]
 
@@ -24,7 +37,7 @@ struct RuleBasedFormatter: TextFormatter {
         ("close paren", ") "),
     ]
 
-    func format(_ raw: String) async -> String {
+    func format(_ raw: String, context: FormatContext) async -> String {
         var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return text }
 
@@ -95,7 +108,7 @@ struct RuleBasedFormatter: TextFormatter {
 
 /// No-op formatter, for comparing raw engine output against the cleanup pass.
 struct PassthroughFormatter: TextFormatter {
-    func format(_ raw: String) async -> String {
+    func format(_ raw: String, context: FormatContext) async -> String {
         raw.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

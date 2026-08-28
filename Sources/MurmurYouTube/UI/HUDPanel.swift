@@ -10,7 +10,7 @@ import SwiftUI
 final class HUDPanel: NSPanel {
     init(controller: DictationController) {
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 340, height: 76),
+            contentRect: NSRect(x: 0, y: 0, width: HUDView.size.width, height: HUDView.size.height),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false

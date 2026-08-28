@@ -4,7 +4,7 @@ import SwiftUI
 
 /// The dictionary: add, edit, delete, search.
 ///
-/// Both entry kinds live in one list rather than separate tabs — they're two shapes of the
+/// All three entry kinds live in one list rather than separate tabs — they're shapes of the
 /// same idea and you want to see everything you've taught it at once. The kind is carried by
 /// a silkscreen tag on each row.
 struct DictionaryPanel: View {
@@ -31,7 +31,7 @@ struct DictionaryPanel: View {
                 EmptyPanel(
                     label: store.entries.isEmpty ? "Dictionary empty" : "No matches",
                     detail: store.entries.isEmpty
-                        ? "Add words it keeps getting wrong."
+                        ? "Add words it keeps getting wrong, or a phrase that expands."
                         : "Try a different search."
                 )
             } else {
@@ -116,28 +116,42 @@ private struct DictionaryRow: View {
 
     @State private var isHovering = false
 
+    private var tag: String {
+        switch entry.kind {
+        case .term: "Term"
+        case .correction: "Fix"
+        case .snippet: "Snip"
+        }
+    }
+
+    private var preview: String {
+        let lines = entry.write.split(separator: "\n", omittingEmptySubsequences: false)
+        guard lines.count > 1, let first = lines.first else { return entry.write }
+        return "\(first) +\(lines.count - 1) more"
+    }
+
     var body: some View {
         HStack(spacing: DS.Space.base) {
             Lamp(color: DS.Color.meterGreen, isLit: entry.isEnabled, size: 6)
 
-            Silkscreen(
-                text: entry.kind == .correction ? "Fix" : "Term",
-                color: DS.Color.inkOnDeck.opacity(0.5)
-            )
-            .frame(width: 34, alignment: .leading)
+            Silkscreen(text: tag, color: DS.Color.inkOnDeck.opacity(0.5))
+                .frame(width: 34, alignment: .leading)
 
-            if entry.kind == .correction {
+            if entry.kind != .term {
                 Text(entry.hear)
                     .font(DS.Font.body)
                     .foregroundStyle(DS.Color.inkOnDeck.opacity(0.6))
-                Image(systemName: "arrow.right")
+                Image(systemName: entry.kind == .snippet ? "arrow.right.to.line" : "arrow.right")
                     .font(.system(size: 8, weight: .bold))
                     .foregroundStyle(DS.Color.inkOnDeck.opacity(0.4))
             }
 
-            Text(entry.write)
+            // A snippet body can be several lines; the row shows the first and says so,
+            // rather than letting one entry push every other row off the panel.
+            Text(preview)
                 .font(DS.Font.bodyEmphasis)
                 .foregroundStyle(DS.Color.inkOnDeck)
+                .lineLimit(1)
 
             Spacer()
 
@@ -187,7 +201,7 @@ private struct DictionaryEditor: View {
             id: entry?.id ?? UUID(),
             kind: kind,
             write: write.trimmingCharacters(in: .whitespacesAndNewlines),
-            hear: kind == .correction ? hear.trimmingCharacters(in: .whitespacesAndNewlines) : "",
+            hear: kind == .term ? "" : hear.trimmingCharacters(in: .whitespacesAndNewlines),
             isEnabled: entry?.isEnabled ?? true
         )
     }
@@ -198,6 +212,14 @@ private struct DictionaryEditor: View {
         !draft.write.isEmpty && (kind == .term || !draft.hear.isEmpty)
     }
 
+    private var writeLabel: String {
+        switch kind {
+        case .term: "Word or phrase"
+        case .correction: "Write"
+        case .snippet: "Expands to"
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Space.roomy) {
             Silkscreen(text: entry == nil ? "New entry" : "Edit entry", large: true)
@@ -205,14 +227,25 @@ private struct DictionaryEditor: View {
             kindPicker
 
             VStack(alignment: .leading, spacing: DS.Space.base) {
-                if kind == .correction {
-                    field("When you hear", text: $hear, prompt: "cloud code")
+                if kind != .term {
+                    field(
+                        kind == .snippet ? "When you say" : "When you hear",
+                        text: $hear,
+                        prompt: kind == .snippet ? "my address" : "cloud code"
+                    )
                 }
-                field(
-                    kind == .correction ? "Write" : "Word or phrase",
-                    text: $write,
-                    prompt: kind == .correction ? "Claude Code" : "Anthropic"
-                )
+
+                // A snippet body is the one value that can run to several lines, so it gets
+                // an editor rather than a single-line field.
+                if kind == .snippet {
+                    bodyField
+                } else {
+                    field(
+                        writeLabel,
+                        text: $write,
+                        prompt: kind == .correction ? "Claude Code" : "Anthropic"
+                    )
+                }
             }
 
             ForEach(warnings) { warning in
@@ -248,11 +281,30 @@ private struct DictionaryEditor: View {
         .background(BrushedPanel(radius: DS.Radius.window))
     }
 
+    private var bodyField: some View {
+        VStack(alignment: .leading, spacing: DS.Space.tight) {
+            Silkscreen(text: writeLabel)
+            TextEditor(text: $write)
+                .textEditorStyle(.plain)
+                .font(DS.Font.body)
+                .foregroundStyle(DS.Color.inkOnDeck)
+                .scrollContentBackground(.hidden)
+                .frame(height: 88)
+                .padding(.horizontal, DS.Space.snug)
+                .padding(.vertical, DS.Space.snug)
+                .background(DS.Color.deck, in: .rect(cornerRadius: DS.Radius.chip))
+                .overlay(
+                    RoundedRectangle(cornerRadius: DS.Radius.chip)
+                        .strokeBorder(DS.Color.seam, lineWidth: DS.Border.hairline)
+                )
+        }
+    }
+
     private var kindPicker: some View {
         HStack(spacing: DS.Space.snug) {
-            ForEach([DictionaryEntry.Kind.term, .correction], id: \.self) { candidate in
+            ForEach([DictionaryEntry.Kind.term, .correction, .snippet], id: \.self) { candidate in
                 TransportKey(
-                    title: candidate == .term ? "Term" : "Correction",
+                    title: Self.kindTitle(candidate),
                     isEngaged: kind == candidate,
                     engagedColor: DS.Color.ink
                 ) {
@@ -264,6 +316,14 @@ private struct DictionaryEditor: View {
                     }
                 }
             }
+        }
+    }
+
+    private static func kindTitle(_ kind: DictionaryEntry.Kind) -> String {
+        switch kind {
+        case .term: "Term"
+        case .correction: "Correction"
+        case .snippet: "Snippet"
         }
     }
 

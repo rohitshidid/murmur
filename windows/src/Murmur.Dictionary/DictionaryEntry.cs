@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace Murmur.Dictionary;
 
 /// <summary>
@@ -14,6 +16,17 @@ public enum EntryKind
 
     /// <summary>A mapping: when you hear X, write Y. Biasing *and* the correction pass.</summary>
     Correction,
+
+    /// <summary>
+    /// An expansion: say X, get a whole block of Y. Deliberately invoked, where a correction
+    /// repairs something the user did not ask for.
+    /// </summary>
+    /// <remarks>
+    /// Never fed to engine biasing. A snippet's output is a body of prose the user already
+    /// knows how to say, and putting it in a 40-phrase context list would make the model
+    /// hallucinate from its priming on quiet audio.
+    /// </remarks>
+    Snippet,
 }
 
 /// <inheritdoc cref="EntryKind"/>
@@ -22,18 +35,19 @@ public sealed record DictionaryEntry
     /// <summary>Stable identity, so an entry can be edited or deleted unambiguously.</summary>
     public Guid Id { get; init; } = Guid.NewGuid();
 
-    /// <summary>Which of the two kinds this entry is.</summary>
+    /// <summary>Which of the three kinds this entry is.</summary>
     public EntryKind Kind { get; init; }
 
     /// <summary>
-    /// The correct text. For <see cref="EntryKind.Term"/> this is the word itself; for
-    /// <see cref="EntryKind.Correction"/> it is Y — what gets written. Either way this is
-    /// what the engine is biased toward.
+    /// The text that gets written. For <see cref="EntryKind.Term"/> this is the word itself;
+    /// for <see cref="EntryKind.Correction"/> and <see cref="EntryKind.Snippet"/> it is the Y
+    /// in "when you hear X, write Y". Biased into the engine for the first two kinds only.
     /// </summary>
     public string Write { get; init; } = string.Empty;
 
     /// <summary>
-    /// For <see cref="EntryKind.Correction"/> only: the X in "when you hear X".
+    /// For <see cref="EntryKind.Correction"/> and <see cref="EntryKind.Snippet"/>: the X in
+    /// "when you hear X".
     /// </summary>
     public string Hear { get; init; } = string.Empty;
 
@@ -54,11 +68,86 @@ public sealed record DictionaryEntry
     public static DictionaryEntry Correction(string hear, string write) =>
         new() { Kind = EntryKind.Correction, Hear = hear, Write = write };
 
+    /// <summary>An expansion fired by a spoken trigger.</summary>
+    /// <param name="hear">The spoken trigger — the X in "when you hear X".</param>
+    /// <param name="write">The block of text it expands to. May contain newlines.</param>
+    public static DictionaryEntry Snippet(string hear, string write) =>
+        new() { Kind = EntryKind.Snippet, Hear = hear, Write = write };
+
     /// <summary>How this entry reads in the plain-text file.</summary>
+    /// <remarks>
+    /// <c>-&gt;</c> is a correction and <c>=&gt;</c> a snippet. Two arrows rather than a
+    /// keyword because the file is meant to be edited by hand, and <c>my address =&gt; …</c>
+    /// reads as what it does.
+    /// </remarks>
     public string ToFileLine()
     {
-        var body = Kind == EntryKind.Correction ? $"{Hear} -> {Write}" : Write;
+        var body = Kind switch
+        {
+            EntryKind.Correction => $"{Hear} -> {Write}",
+            EntryKind.Snippet => $"{Hear} => {Escape(Write)}",
+            _ => Write,
+        };
         return IsEnabled ? body : $"# off: {body}";
+    }
+
+    /// <summary>Encodes newlines and tabs so a multi-line snippet survives one line.</summary>
+    /// <param name="text">The raw body.</param>
+    /// <returns>The body with backslashes, newlines and tabs escaped.</returns>
+    /// <remarks>
+    /// Backslashes are escaped first, or a body ending in one would swallow the escape of
+    /// whatever followed it.
+    /// </remarks>
+    public static string Escape(string text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        return text
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("\n", "\\n", StringComparison.Ordinal)
+            .Replace("\t", "\\t", StringComparison.Ordinal);
+    }
+
+    /// <summary>The inverse of <see cref="Escape"/>.</summary>
+    /// <param name="text">An escaped body as read from the file.</param>
+    /// <returns>The body with its newlines and tabs restored.</returns>
+    /// <remarks>
+    /// Scanned character by character rather than by three sequential replacements:
+    /// unescaping in passes would turn a literal backslash-then-n into a newline, which is
+    /// exactly the round trip this has to protect.
+    /// </remarks>
+    public static string Unescape(string text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+
+        var result = new StringBuilder(text.Length);
+        var isEscaped = false;
+
+        foreach (var character in text)
+        {
+            if (isEscaped)
+            {
+                _ = character switch
+                {
+                    'n' => result.Append('\n'),
+                    't' => result.Append('\t'),
+                    '\\' => result.Append('\\'),
+                    // Not an escape we know — keep both characters as written.
+                    _ => result.Append('\\').Append(character),
+                };
+                isEscaped = false;
+            }
+            else if (character == '\\')
+            {
+                isEscaped = true;
+            }
+            else
+            {
+                _ = result.Append(character);
+            }
+        }
+
+        if (isEscaped) _ = result.Append('\\');
+        return result.ToString();
     }
 }
 
@@ -103,7 +192,7 @@ public sealed record DictionaryWarning(string Message)
     public static IReadOnlyList<DictionaryWarning> Check(DictionaryEntry entry)
     {
         // Only the trigger side can misfire. A Term is never matched against text.
-        if (entry.Kind != EntryKind.Correction) return [];
+        if (entry.Kind == EntryKind.Term) return [];
 
         var trigger = entry.Hear.Trim();
         if (trigger.Length == 0) return [];

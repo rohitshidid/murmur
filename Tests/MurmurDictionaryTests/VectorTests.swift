@@ -30,7 +30,7 @@ struct VectorTests {
 
         var asEntry: DictionaryEntry {
             DictionaryEntry(
-                kind: kind == "correction" ? .correction : .term,
+                kind: DictionaryEntry.Kind(rawValue: kind) ?? .term,
                 write: write,
                 hear: hear ?? "",
                 isEnabled: isEnabled ?? true
@@ -41,6 +41,12 @@ struct VectorTests {
     struct ExpectedCorrection: Decodable {
         let to: String
         let count: Int
+        /// Absent means `.correction` — the vectors predating snippets don't carry it.
+        var kind: String?
+
+        var expectedKind: AppliedCorrection.Kind {
+            AppliedCorrection.Kind(rawValue: kind ?? "correction") ?? .correction
+        }
     }
 
     static func load() throws -> Vectors {
@@ -71,6 +77,7 @@ struct VectorTests {
                 let match = applied.first { $0.to == expected.to }
                 #expect(match != nil, "\(testCase.name): expected a correction to “\(expected.to)”")
                 #expect(match?.count == expected.count, "\(testCase.name): count for “\(expected.to)”")
+                #expect(match?.kind == expected.expectedKind, "\(testCase.name): kind for “\(expected.to)”")
             }
         }
     }
@@ -104,5 +111,28 @@ struct VectorTests {
     func doesNotWarnOnDistinctivePhrase() {
         let entry = DictionaryEntry.correction(hear: "clawed code", write: "Claude Code")
         #expect(DictionaryWarning.check(entry).isEmpty)
+    }
+
+    @Test("a snippet's own trigger is checked for misfires too")
+    func warnsOnCommonSnippetTrigger() {
+        let entry = DictionaryEntry.snippet(hear: "my", write: "12 Main Street")
+        #expect(DictionaryWarning.check(entry).isEmpty == false)
+    }
+
+    @Test("a snippet body survives a round trip through the file format")
+    func snippetFileLineRoundTrips() {
+        let body = "Thanks,\nRohit\tX\\Y"
+        let escaped = DictionaryEntry.escape(body)
+        #expect(escaped.contains("\n") == false)
+        #expect(DictionaryEntry.unescape(escaped) == body)
+    }
+
+    @Test("snippet bodies are kept out of the engine bias list")
+    func biasSkipsSnippetBodies() {
+        let entries = [
+            DictionaryEntry.term("Anthropic"),
+            DictionaryEntry.snippet(hear: "my address", write: "12 Main Street, Pune"),
+        ]
+        #expect(DictionaryCorrector.biasPhrases(from: entries) == ["Anthropic"])
     }
 }

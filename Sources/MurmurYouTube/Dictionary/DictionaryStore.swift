@@ -112,6 +112,22 @@ final class DictionaryStore {
                 guard !line.isEmpty else { return nil }
             }
 
+            // `=>` is checked first. The two arrows share no characters, so the order is
+            // not strictly load-bearing — but a line is a snippet or a correction, never
+            // both, and testing the more specific form first keeps it that way if either
+            // arrow ever changes.
+            if let arrow = line.range(of: "=>") {
+                let hear = line[..<arrow.lowerBound].trimmingCharacters(in: .whitespaces)
+                let write = line[arrow.upperBound...].trimmingCharacters(in: .whitespaces)
+                guard !hear.isEmpty, !write.isEmpty else { return nil }
+                return DictionaryEntry(
+                    kind: .snippet,
+                    write: DictionaryEntry.unescape(write),
+                    hear: hear,
+                    isEnabled: isEnabled
+                )
+            }
+
             if let arrow = line.range(of: "->") {
                 let hear = line[..<arrow.lowerBound].trimmingCharacters(in: .whitespaces)
                 let write = line[arrow.upperBound...].trimmingCharacters(in: .whitespaces)
@@ -138,7 +154,10 @@ final class DictionaryStore {
         #
         #   Anthropic                 a term — the engine is told this word exists
         #   cloud code -> Claude Code a correction — when you hear X, write Y
+        #   my address => 12 Main St  a snippet — say X, get the whole block Y
         #   # off: some rule -> Rule  a disabled entry
+        #
+        # A snippet body may span lines: write \n where a line break should go.
         #
         # Edit this file directly if you like; the app picks up changes immediately.
 

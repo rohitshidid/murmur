@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import Carbon.HIToolbox
 import Foundation
 
 /// Puts text into whatever field currently has keyboard focus.
@@ -20,8 +21,27 @@ import Foundation
 /// target app, so "the focused element" is still their text field.
 @MainActor
 enum TextInjector {
+    /// The last thing injected, kept so it can be taken back out again.
+    struct Injection {
+        let text: String
+        let date: Date
+        /// Where it went. Undo refuses to fire if you've since switched apps.
+        let bundleID: String?
+    }
+
+    private(set) static var lastInjection: Injection?
+
+    /// How long an injection stays undoable.
+    ///
+    /// Short on purpose. Undo removes text without being able to prove, in every app, that
+    /// the text is still the text we put there — so the guarantee is bounded by "you just
+    /// did this", not by "we found it again".
+    private static let undoWindow: TimeInterval = 30
+
     static func insert(_ text: String) {
         guard !text.isEmpty else { return }
+
+        let target = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
 
         switch insertViaAccessibility(text) {
         case .inserted:
@@ -30,6 +50,112 @@ enum TextInjector {
             Log.inject.info("AX insert not verified (\(reason, privacy: .public)) — pasting")
             insertViaPasteboard(text)
         }
+
+        lastInjection = Injection(text: text, date: Date(), bundleID: target)
+    }
+
+    // MARK: - Undo
+
+    /// Whether there is a recent injection, in the app it went to, still worth undoing.
+    static var canUndo: Bool {
+        guard let last = lastInjection else { return false }
+        guard Date().timeIntervalSince(last.date) < undoWindow else { return false }
+        // Undoing into a different app than the one that received the text would delete
+        // something we never wrote.
+        let current = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        return current == last.bundleID
+    }
+
+    /// Takes the last injected text back out.
+    ///
+    /// Two strategies, mirroring `insert`:
+    /// 1. **Accessibility** — select exactly the injected span behind the caret, confirm it
+    ///    still reads as the text we wrote, and delete it. Precise and verified.
+    /// 2. **⌘Z** — let the app undo its own paste.
+    ///
+    /// Synthesizing N backspaces was the obvious third option and is deliberately not used:
+    /// it deletes blind. If the caret moved at all — a click, an arrow key, an autocomplete
+    /// — it eats the user's own text instead, and there is no way to detect that after the
+    /// fact. ⌘Z gets the app to undo the same edit it made, so a moved caret costs an
+    /// unrelated undo rather than lost work.
+    static func undoLast() {
+        guard canUndo, let last = lastInjection else { return }
+        // One undo per injection either way — a second ⌥⌘Z should reach the app, not
+        // silently delete another span of the user's text.
+        lastInjection = nil
+
+        if removeViaAccessibility(last.text) {
+            Log.inject.info("undo: removed \(last.text.count) chars via AX")
+        } else {
+            Log.inject.info("undo: AX removal unavailable — sending ⌘Z")
+            postCommandKey(kVK_ANSI_Z, flags: .maskCommand)
+        }
+    }
+
+    /// - Returns: `true` only if the injected span was found behind the caret and deleted.
+    private static func removeViaAccessibility(_ text: String) -> Bool {
+        let systemWide = AXUIElementCreateSystemWide()
+
+        var focused: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            systemWide,
+            kAXFocusedUIElementAttribute as CFString,
+            &focused
+        ) == .success, let focused else { return false }
+
+        let element = unsafeDowncast(focused as AnyObject, to: AXUIElement.self)
+
+        // AX ranges are in UTF-16 units, so the span length has to be counted the same way
+        // — a transcript with an emoji or an accented character would otherwise be off by
+        // exactly the number of surrogate pairs it contains.
+        let length = text.utf16.count
+        guard let caret = selectedRange(of: element) else { return false }
+
+        // A non-empty selection means the user has selected something since; deleting the
+        // span behind it would throw away a different piece of text than the one we wrote.
+        guard caret.length == 0, caret.location >= length else { return false }
+
+        let span = CFRange(location: caret.location - length, length: length)
+        guard let spanValue = AXValueCreate(.cfRange, withUnsafePointer(to: span) { $0 }) else {
+            return false
+        }
+
+        guard AXUIElementSetAttributeValue(
+            element,
+            kAXSelectedTextRangeAttribute as CFString,
+            spanValue
+        ) == .success else { return false }
+
+        // Confirm the selection actually reads back as what we injected before deleting it.
+        // Everything above can succeed in an app that quietly ignores range writes, and
+        // this is the step that catches it.
+        var selected: CFTypeRef?
+        let readBack = AXUIElementCopyAttributeValue(
+            element,
+            kAXSelectedTextAttribute as CFString,
+            &selected
+        )
+        guard readBack == .success, (selected as? String) == text else {
+            // Put the caret back where it was rather than leaving a stray selection.
+            restoreCaret(to: caret, in: element)
+            return false
+        }
+
+        guard AXUIElementSetAttributeValue(
+            element,
+            kAXSelectedTextAttribute as CFString,
+            "" as CFString
+        ) == .success else {
+            restoreCaret(to: caret, in: element)
+            return false
+        }
+
+        return true
+    }
+
+    private static func restoreCaret(to range: CFRange, in element: AXUIElement) {
+        guard let value = AXValueCreate(.cfRange, withUnsafePointer(to: range) { $0 }) else { return }
+        AXUIElementSetAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, value)
     }
 
     private enum AXOutcome {
@@ -139,17 +265,23 @@ enum TextInjector {
     }
 
     private static func postCommandV() {
-        guard let source = CGEventSource(stateID: .privateState) else { return }
-        let vKey: CGKeyCode = 9 // kVK_ANSI_V
+        postCommandKey(kVK_ANSI_V, flags: .maskCommand)
+    }
 
-        guard let down = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: true),
-              let up = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: false)
+    private static func postCommandKey(_ key: Int, flags: CGEventFlags) {
+        guard let source = CGEventSource(stateID: .privateState) else { return }
+        let code = CGKeyCode(key)
+
+        guard let down = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: true),
+              let up = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: false)
         else { return }
 
         // Set explicitly rather than inheriting live hardware modifier state — the user may
-        // still be resting a finger on something.
-        down.flags = .maskCommand
-        up.flags = .maskCommand
+        // still be resting a finger on something. For undo this is load-bearing: ⌥⌘Z is
+        // physically held as the chord is sent, and passing ⌥ along would turn the ⌘Z we
+        // are synthesizing back into ⌥⌘Z.
+        down.flags = flags
+        up.flags = flags
 
         down.post(tap: .cghidEventTap)
         up.post(tap: .cghidEventTap)

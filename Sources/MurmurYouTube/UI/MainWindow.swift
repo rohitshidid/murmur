@@ -2,12 +2,12 @@ import MurmurDictionary
 import AppKit
 import SwiftUI
 
-/// The app's main window — the front panel of the unit.
+/// The app's main window.
 ///
-/// Laid out the way a deck is: transport and meter across the top on the panel itself, then
-/// a recessed well below holding whichever section is selected. The section selector is a
-/// row of keys, not a segmented control, because everything else here is a physical control
-/// and one piece of stock UI would give the whole thing away.
+/// One column: a compact transport strip, a segmented switch, and the selected section in
+/// a well below it. The strip is deliberately short — the app's real surface is the
+/// transcript list, and a control panel taller than the content it controls is a shape
+/// that only makes sense on hardware.
 struct MainWindow: View {
     @Bindable var controller: DictationController
 
@@ -15,10 +15,26 @@ struct MainWindow: View {
 
     enum Section: String, CaseIterable, Identifiable {
         case transcriptions
+        case meetings
         case dictionary
 
         var id: String { rawValue }
-        var title: String { self == .transcriptions ? "Transcriptions" : "Dictionary" }
+
+        var title: String {
+            switch self {
+            case .transcriptions: "Transcriptions"
+            case .meetings: "Meetings"
+            case .dictionary: "Dictionary"
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .transcriptions: "waveform"
+            case .meetings: "person.wave.2"
+            case .dictionary: "character.book.closed"
+            }
+        }
     }
 
     var body: some View {
@@ -28,50 +44,76 @@ struct MainWindow: View {
             VStack(spacing: DS.Space.base) {
                 TransportPanel(controller: controller)
 
-                sectionKeys
+                sectionSwitch
 
                 Well {
                     Group {
                         switch section {
                         case .transcriptions: TranscriptionList()
+                        case .meetings: MeetingsPanel()
                         case .dictionary: DictionaryPanel()
                         }
                     }
-                    .padding(DS.Space.hair)
                 }
                 .frame(maxHeight: .infinity)
             }
             .padding(DS.Space.roomy)
         }
-        .frame(minWidth: 720, minHeight: 520)
+        .frame(minWidth: 760, minHeight: 560)
     }
 
-    private var sectionKeys: some View {
-        HStack(spacing: DS.Space.snug) {
+    /// A segmented switch: one track, the selection sliding between segments.
+    ///
+    /// The slide is a `matchedGeometryEffect` rather than three independently animating
+    /// backgrounds, so the indicator reads as one object moving instead of one fading out
+    /// while another fades in.
+    private var sectionSwitch: some View {
+        HStack(spacing: DS.Space.hair) {
             ForEach(Section.allCases) { candidate in
-                TransportKey(
-                    title: candidate.title,
-                    isEngaged: section == candidate,
-                    engagedColor: DS.Color.ink
-                ) {
+                let isSelected = section == candidate
+                Button {
                     withAnimation(DS.Motion.panel) { section = candidate }
-                }
-                .background {
-                    if section == candidate {
-                        RoundedRectangle(cornerRadius: DS.Radius.control)
-                            .fill(DS.Color.selection)
+                } label: {
+                    HStack(spacing: DS.Space.tight) {
+                        Image(systemName: candidate.icon)
+                            .font(.system(size: 10, weight: .semibold))
+                        Text(candidate.title)
+                            .font(DS.Font.body)
+                    }
+                    .foregroundStyle(isSelected ? DS.Color.ink : DS.Color.inkSecondary)
+                    .padding(.horizontal, DS.Space.base)
+                    .frame(height: DS.Material.keyHeight)
+                    .background {
+                        if isSelected {
+                            RoundedRectangle(cornerRadius: DS.Radius.control - 2, style: .continuous)
+                                .fill(DS.Color.panel)
+                                .shadow(
+                                    color: DS.Shadow.raised.color,
+                                    radius: DS.Shadow.raised.radius,
+                                    y: DS.Shadow.raised.y
+                                )
+                                .matchedGeometryEffect(id: "section", in: sectionNamespace)
+                        }
                     }
                 }
+                .buttonStyle(.plain)
             }
-            Spacer()
-            Vents(count: 8)
         }
+        .padding(DS.Space.hair)
+        .background(DS.Color.well, in: .rect(cornerRadius: DS.Radius.control))
+        .overlay(
+            RoundedRectangle(cornerRadius: DS.Radius.control, style: .continuous)
+                .strokeBorder(DS.Color.seam, lineWidth: DS.Border.hairline)
+        )
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
+
+    @Namespace private var sectionNamespace
 }
 
 // MARK: - Transport
 
-/// Record / stop, the level meter, and the counter — the top of the unit.
+/// Record / stop, the level meter, and the elapsed clock, on one line.
 private struct TransportPanel: View {
     @Bindable var controller: DictationController
 
@@ -81,54 +123,45 @@ private struct TransportPanel: View {
     private var isRecording: Bool { controller.state.isActive }
 
     var body: some View {
-        HStack(spacing: DS.Space.roomy) {
-            VStack(alignment: .leading, spacing: DS.Space.snug) {
-                Silkscreen(text: "Transport")
-                HStack(spacing: DS.Space.snug) {
-                    TransportKey(
-                        title: isRecording ? "Stop" : "Record",
-                        systemImage: isRecording ? "stop.fill" : "circle.fill",
-                        isEngaged: isRecording
-                    ) {
-                        if isRecording {
-                            controller.stopButtonRecording()
-                        } else {
-                            controller.startButtonRecording()
-                        }
-                    }
-
-                    HStack(spacing: DS.Space.tight) {
-                        Lamp(color: DS.Color.record, isLit: isRecording)
-                        Silkscreen(text: "Rec")
-                    }
-                    .padding(.leading, DS.Space.tight)
+        HStack(spacing: DS.Space.base) {
+            TransportKey(
+                title: isRecording ? "Stop" : "Record",
+                systemImage: isRecording ? "stop.fill" : "circle.fill",
+                isEngaged: isRecording,
+                engagedColor: DS.Color.record
+            ) {
+                if isRecording {
+                    controller.stopButtonRecording()
+                } else {
+                    controller.startButtonRecording()
                 }
             }
 
-            VStack(alignment: .leading, spacing: DS.Space.tight) {
-                Silkscreen(text: "Level")
-                VUMeter(level: controller.level, isActive: isRecording)
-                    .frame(width: 168, height: 54)
-            }
-
-            VStack(alignment: .leading, spacing: DS.Space.tight) {
-                Silkscreen(text: "Counter")
-                DeckWindow {
-                    Readout(text: counterText, large: true)
-                        .padding(.horizontal, DS.Space.base)
-                        .padding(.vertical, DS.Space.snug)
+            // The lock only appears while a tap has latched the mic open. It sits next to
+            // the transport because that is where you look to find out whether the app is
+            // still listening.
+            if controller.isLatched {
+                HStack(spacing: DS.Space.tight) {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 9, weight: .semibold))
+                    Silkscreen(text: "Locked", color: DS.Color.accent)
                 }
+                .foregroundStyle(DS.Color.accent)
+                .transition(.opacity)
             }
 
-            Spacer()
+            VUMeter(level: controller.level, isActive: isRecording)
+                .frame(height: DS.Material.meterHeight)
+                .frame(maxWidth: .infinity)
 
-            VStack(alignment: .trailing, spacing: DS.Space.snug) {
-                Screw()
-                Screw()
-            }
+            Readout(text: counterText)
+                .foregroundStyle(isRecording ? DS.Color.ink : DS.Color.inkSecondary)
+                .monospacedDigit()
         }
-        .padding(DS.Space.roomy)
+        .padding(.horizontal, DS.Space.roomy)
+        .padding(.vertical, DS.Space.base)
         .background(BrushedPanel())
+        .animation(DS.Motion.panel, value: controller.isLatched)
         .onChange(of: controller.state.isActive) { _, active in
             startedAt = active ? Date() : nil
             if !active { elapsed = 0 }
@@ -228,6 +261,7 @@ private struct TranscriptionRow: View {
 
     @State private var didCopy = false
     @State private var isHovering = false
+    @State private var isTeaching = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Space.snug) {
@@ -240,6 +274,8 @@ private struct TranscriptionRow: View {
                     .font(DS.Font.caption)
                     .foregroundStyle(DS.Color.inkOnDeck.opacity(0.5))
                 copyButton
+                teachButton
+                    .opacity(isHovering ? 1 : 0)
                 deleteButton
                     .opacity(isHovering ? 1 : 0)
             }
@@ -261,6 +297,25 @@ private struct TranscriptionRow: View {
                 .opacity(isHovering ? 0.85 : 1)
         }
         .onHover { isHovering = $0 }
+        .sheet(isPresented: $isTeaching) {
+            TeachSheet(transcript: run.text)
+        }
+    }
+
+    /// The whole of the learned-vocabulary feature: a wrong word in history is the one
+    /// place where both halves of a rule — what was heard and what was meant — are known.
+    private var teachButton: some View {
+        Button { isTeaching = true } label: {
+            Silkscreen(text: "Teach", color: DS.Color.inkOnDeck.opacity(0.6))
+                .padding(.horizontal, DS.Space.snug)
+                .padding(.vertical, DS.Space.tight)
+                .overlay(
+                    RoundedRectangle(cornerRadius: DS.Radius.chip)
+                        .strokeBorder(DS.Color.inkOnDeck.opacity(0.3), lineWidth: DS.Border.hairline)
+                )
+        }
+        .buttonStyle(.plain)
+        .help("Add a dictionary entry from this transcript")
     }
 
     private var copyButton: some View {
@@ -314,7 +369,10 @@ private struct CorrectionBadges: View {
 
     var body: some View {
         HStack(spacing: DS.Space.snug) {
-            Silkscreen(text: "Corrected", color: DS.Color.meterAmber)
+            Silkscreen(
+                text: corrections.contains(where: { $0.kind == .snippet }) ? "Applied" : "Corrected",
+                color: DS.Color.meterAmber
+            )
             ForEach(corrections, id: \.self) { correction in
                 HStack(spacing: DS.Space.tight) {
                     Text(correction.from)
@@ -368,7 +426,7 @@ struct SearchField: View {
         }
         .padding(.horizontal, DS.Space.base)
         .padding(.vertical, DS.Space.snug)
-        .background(DS.Color.deck)
+        .background(DS.Color.panelShade)
         .overlay(alignment: .bottom) {
             Rectangle().fill(DS.Color.seam).frame(height: DS.Border.seam)
         }
