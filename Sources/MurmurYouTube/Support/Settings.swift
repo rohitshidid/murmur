@@ -38,11 +38,6 @@ final class Settings {
         didSet { defaults.set(engine.rawValue, forKey: Keys.engine) }
     }
 
-    /// Run every engine on each recording and show them side by side, instead of
-    /// transcribing with one. Nothing is typed into the focused app in this mode.
-    var compareMode: Bool {
-        didSet { defaults.set(compareMode, forKey: Keys.compareMode) }
-    }
 
     /// Run the cleanup pass before injecting. Off = raw engine output.
     var cleanupEnabled: Bool {
@@ -68,7 +63,6 @@ final class Settings {
         static let soundEnabled = "soundEnabled"
         static let engine = "engine"
         static let smartCleanup = "smartCleanup"
-        static let compareMode = "compareMode"
     }
 
     private init() {
@@ -79,7 +73,6 @@ final class Settings {
         engine = SpeechEngineChoice(rawValue: defaults.string(forKey: Keys.engine) ?? "") ?? .apple
         cleanupEnabled = defaults.object(forKey: Keys.cleanupEnabled) as? Bool ?? true
         smartCleanup = defaults.object(forKey: Keys.smartCleanup) as? Bool ?? false
-        compareMode = defaults.object(forKey: Keys.compareMode) as? Bool ?? false
         soundEnabled = defaults.object(forKey: Keys.soundEnabled) as? Bool ?? true
     }
 }

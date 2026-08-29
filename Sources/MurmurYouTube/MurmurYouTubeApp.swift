@@ -35,11 +35,6 @@ struct MurmurYouTubeApp: App {
             Image(systemName: delegate.controller.state.isActive ? "waveform.circle.fill" : "waveform")
         }
 
-        Window("Engine comparison", id: "comparison") {
-            ComparisonWindow(controller: delegate.controller)
-        }
-        .defaultSize(width: 640, height: 560)
-        .windowResizability(.contentMinSize)
     }
 }
 
@@ -64,63 +59,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             retryActivation()
         }
 
-        // Write the dashboard up front so the menu item always opens something, even
-        // before the first dictation.
-        RunLog.regenerate()
-
         // Parakeet's models take ~20s to load from disk, and that cost lands on whichever
         // dictation touches them first — so the first hold after every launch would stall
         // with the HUD showing nothing. Warm them in the background instead, but only when
         // they're actually going to be used and are already downloaded.
-        let willUseParakeet = Settings.shared.compareMode || Settings.shared.engine == .parakeet
+        let willUseParakeet = Settings.shared.engine == .parakeet
         if willUseParakeet, ParakeetModels.isDownloaded {
             Task.detached(priority: .utility) {
                 _ = try? await ParakeetModels.shared.manager()
             }
         }
 
-        // Every `make install` relaunches the app and drops its windows. Restoring the
-        // window when it was open last time keeps it from vanishing on each rebuild.
-        if UserDefaults.standard.bool(forKey: "comparisonWindowOpen") {
-            Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(400))
-                Self.showComparisonWindow()
-            }
-        }
 
         observeState()
         Log.app.info("Murmur YouTube ready — hold \(Settings.shared.pushToTalkKey.displayName) to dictate")
     }
 
-    /// `murmuryt://clear` and `murmuryt://show`, used by the legacy HTML dashboard and
-    /// as a scriptable way to raise the window.
+    /// `murmuryt://clear` empties the history — a scriptable hook, kept because it costs a
+    /// dozen lines and is the only way to clear history without the UI.
     func application(_ application: NSApplication, open urls: [URL]) {
-        for url in urls where url.scheme == "murmuryt" {
-            switch url.host {
-            case "clear":
-                RunLog.clear()
-                RunStore.shared.reload()
-            case "show":
-                Self.showComparisonWindow()
-            default:
-                break
-            }
+        for url in urls where url.scheme == "murmuryt" && url.host == "clear" {
+            RunLog.clear()
+            RunStore.shared.reload()
         }
-    }
-
-    /// Raises the comparison window without needing SwiftUI's `openWindow` environment
-    /// value — usable from the app delegate and from a URL handler.
-    static func showComparisonWindow() {
-        RunStore.shared.reload()
-        if let existing = NSApp.windows.first(where: { $0.title == "Engine comparison" }) {
-            existing.makeKeyAndOrderFront(nil)
-        }
-        NSApp.activate(ignoringOtherApps: true)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        let isOpen = NSApp.windows.contains { $0.title == "Engine comparison" && $0.isVisible }
-        UserDefaults.standard.set(isOpen, forKey: "comparisonWindowOpen")
         controller.deactivate()
     }
 
@@ -196,13 +160,9 @@ private struct MenuContent: View {
             }
         }
 
-        Toggle("Compare mode (both engines)", isOn: $settings.compareMode)
-
-        if !settings.compareMode {
-            Picker("Engine", selection: $settings.engine) {
-                ForEach(SpeechEngineChoice.allCases, id: \.self) { choice in
-                    Text(choice.displayName).tag(choice)
-                }
+        Picker("Engine", selection: $settings.engine) {
+            ForEach(SpeechEngineChoice.allCases, id: \.self) { choice in
+                Text(choice.displayName).tag(choice)
             }
         }
 
@@ -219,13 +179,6 @@ private struct MenuContent: View {
         Toggle("Sound", isOn: $settings.soundEnabled)
 
         Divider()
-
-        Button("Show comparison window") {
-            RunStore.shared.reload()
-            openWindow(id: "comparison")
-            NSApp.activate(ignoringOtherApps: true)
-        }
-        .keyboardShortcut("d")
 
         // Downloading ~470 MB on the first hold would look like a hang, so offer to do it
         // deliberately instead.

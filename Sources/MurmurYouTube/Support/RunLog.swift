@@ -1,5 +1,6 @@
 import MurmurDictionary
 import Foundation
+import Observation
 
 /// One completed dictation.
 struct DictationRun: Codable, Sendable, Identifiable {
@@ -17,9 +18,6 @@ struct DictationRun: Codable, Sendable, Identifiable {
     /// Release → final text ready. This is the latency you actually feel.
     let processSeconds: Double
     let text: String
-    /// Shared by every engine that processed the same recording, so the dashboard can
-    /// present them as one side-by-side comparison instead of unrelated rows.
-    var group: String?
 
     /// Dictionary corrections that fired on this transcript. Recorded so history can show
     /// whether the dictionary is actually doing anything, rather than leaving it to faith.
@@ -38,7 +36,6 @@ struct DictationRun: Codable, Sendable, Identifiable {
         audioSeconds: Double,
         processSeconds: Double,
         text: String,
-        group: String? = nil,
         corrections: [AppliedCorrection]? = nil
     ) {
         self.id = id
@@ -47,7 +44,6 @@ struct DictationRun: Codable, Sendable, Identifiable {
         self.audioSeconds = audioSeconds
         self.processSeconds = processSeconds
         self.text = text
-        self.group = group
         self.corrections = corrections
     }
 
@@ -59,16 +55,14 @@ struct DictationRun: Codable, Sendable, Identifiable {
         audioSeconds = try container.decode(Double.self, forKey: .audioSeconds)
         processSeconds = try container.decode(Double.self, forKey: .processSeconds)
         text = try container.decode(String.self, forKey: .text)
-        group = try container.decodeIfPresent(String.self, forKey: .group)
         corrections = try container.decodeIfPresent([AppliedCorrection].self, forKey: .corrections)
     }
 }
 
-/// Appends every dictation to a JSONL file and regenerates a dashboard beside it.
+/// Appends every dictation to a JSONL file, one line per run.
 ///
-/// The dashboard is a plain file with a meta-refresh rather than a served page: `file://`
-/// can't fetch its own data directory without tripping CORS, so instead of the page pulling
-/// data, the app pushes a freshly rendered page after each run and the browser just reloads.
+/// JSONL rather than one JSON array so a finished dictation is a single append, and a
+/// truncated write costs the last line rather than the whole history.
 @MainActor
 enum RunLog {
     static var directory: URL {
@@ -78,18 +72,10 @@ enum RunLog {
         return base
     }
 
-    static var dashboardURL: URL { directory.appendingPathComponent("dashboard.html") }
     private static var runsURL: URL { directory.appendingPathComponent("runs.jsonl") }
 
     static func record(_ run: DictationRun) {
         append(run)
-        regenerate()
-        RunStore.shared.reload()
-    }
-
-    static func record(_ runs: [DictationRun]) {
-        runs.forEach(append)
-        regenerate()
         RunStore.shared.reload()
     }
 
@@ -117,25 +103,12 @@ enum RunLog {
         }
     }
 
-    static func regenerate() {
-        let runs = load()
-        try? DashboardHTML.render(
-            runs: runs,
-            compareMode: Settings.shared.compareMode,
-            key: Settings.shared.pushToTalkKey.displayName
-        ).write(to: dashboardURL, atomically: true, encoding: .utf8)
-    }
 
     /// Deletes one run.
     static func delete(_ run: DictationRun) {
         delete(ids: [run.id])
     }
 
-    /// Deletes every run in a comparison group — the engines all transcribed one utterance,
-    /// so removing that utterance means removing all of its rows.
-    static func deleteGroup(_ group: String) {
-        rewrite(load().filter { $0.group != group })
-    }
 
     static func delete(ids: Set<UUID>) {
         rewrite(load().filter { !ids.contains($0.id) })
@@ -143,7 +116,6 @@ enum RunLog {
 
     static func clear() {
         try? FileManager.default.removeItem(at: runsURL)
-        regenerate()
         RunStore.shared.reload()
     }
 
@@ -162,7 +134,25 @@ enum RunLog {
         try? (body.isEmpty ? "" : body + "\n")
             .write(to: runsURL, atomically: true, encoding: .utf8)
 
-        regenerate()
         RunStore.shared.reload()
+    }
+}
+
+/// Live-updating history, observed by the transcription list.
+///
+/// Lives here rather than beside a view because `RunLog` is what mutates the file, and the
+/// two have to stay in step — every write reloads this, and a store owned by a view would
+/// mean the file and the UI could disagree whenever that view wasn't on screen.
+@MainActor
+@Observable
+final class RunStore {
+    static let shared = RunStore()
+
+    private(set) var runs: [DictationRun] = []
+
+    private init() { reload() }
+
+    func reload() {
+        runs = RunLog.load()
     }
 }

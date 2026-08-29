@@ -13,7 +13,7 @@ protocol TextFormatter: Sendable {
 }
 
 extension TextFormatter {
-    /// For call sites with no destination — tests, and the comparison window, which never
+    /// For call sites with no destination — tests, and any path that never
     /// injects anywhere.
     func format(_ raw: String) async -> String {
         await format(raw, context: .none)
@@ -106,9 +106,3 @@ struct RuleBasedFormatter: TextFormatter {
     }
 }
 
-/// No-op formatter, for comparing raw engine output against the cleanup pass.
-struct PassthroughFormatter: TextFormatter {
-    func format(_ raw: String, context: FormatContext) async -> String {
-        raw.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-}

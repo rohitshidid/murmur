@@ -66,18 +66,14 @@ final class DictationController {
 
     private var engine: (any TranscriptionEngine)?
     private var consumeTask: Task<Void, Never>?
-    /// Returns the ordered recording when compare mode is on, empty otherwise.
-    private var feedTask: Task<[AudioChunk], Never>?
+    private var feedTask: Task<Void, Never>?
     private var audioContinuation: AsyncStream<AudioChunk>.Continuation?
 
-    /// Timestamps for the dashboard: when the key went down, and when it came up.
+    /// Timestamps for the history list: when the key went down, and when it came up.
     private var holdStarted: Date?
     private var releasedAt: Date?
     private var engineName = ""
 
-    /// Compare mode only: the recording, kept so every engine sees identical audio.
-    private var recorded: [AudioChunk] = []
-    private var isComparing = false
 
     init(
         formatter: (any TextFormatter)? = nil,
@@ -124,19 +120,12 @@ final class DictationController {
 
     /// Starts a recording from a Record button rather than the hotkey.
     ///
-    /// Wispr Flow's hotkey is held down for the duration **only in compare mode**. Reaching
-    /// into another app is a comparison affordance; during ordinary dictation it would mean
-    /// every recording silently shipped your audio to a third party's servers.
     func startButtonRecording() {
         guard case .idle = state else { return }
-        if Settings.shared.compareMode { WisprTrigger.press() }
         beginDictation()
     }
 
-    /// Releases Wispr's hotkey first, so its upload starts while our own engines are still
-    /// finishing — otherwise every run would wait the full round trip end to end.
     func stopButtonRecording() {
-        WisprTrigger.release()
         hotkey.clearLatch()
         isLatched = false
         endDictation()
@@ -149,9 +138,7 @@ final class DictationController {
         state = .starting
         transcript = ""
         holdStarted = Date()
-        isComparing = Settings.shared.compareMode
-        recorded.removeAll(keepingCapacity: true)
-        engineName = isComparing ? "Comparing…" : Settings.shared.engine.displayName
+        engineName = Settings.shared.engine.displayName
 
         Task { @MainActor in
             do {
@@ -165,15 +152,7 @@ final class DictationController {
 
                 let chunks = try await engine.start()
 
-                // Compare mode captures in *Apple's* format, not a format of our choosing.
-                //
-                // SpeechAnalyzer enforces `Audio sample data must be 16-bit signed integers`
-                // as a hard precondition — feeding it float32 doesn't fail gracefully, it
-                // kills the process. Parakeet is the flexible one (its `feed` converts
-                // int16/int32/float32), so the strict engine picks the format and the
-                // tolerant engine adapts. Both still replay the identical buffers.
-                let formatOwner: any TranscriptionEngine = isComparing ? AppleSpeechEngine() : engine
-                guard let format = await formatOwner.preferredInputFormat() else {
+                guard let format = await engine.preferredInputFormat() else {
                     throw TranscriptionError.noAudioFormat
                 }
 
@@ -184,18 +163,12 @@ final class DictationController {
                 )
                 self.audioContinuation = audioContinuation
 
-                // The recording is accumulated *inside* the ordered drain, not by spawning
-                // a task per buffer. Unstructured tasks have no ordering guarantee, so
-                // collecting them separately could assemble the replay audio out of order
-                // and silently produce word-salad from the comparison.
-                let comparing = isComparing
+                // Audio must reach the engine in capture order, which is what the single
+                // draining task guarantees.
                 self.feedTask = Task.detached(priority: .userInitiated) {
-                    var recording: [AudioChunk] = []
                     for await chunk in audioStream {
-                        if comparing { recording.append(chunk) }
                         await engine.feed(chunk)
                     }
-                    return recording
                 }
 
                 try capture.start(
@@ -248,7 +221,7 @@ final class DictationController {
             // or the tail of the utterance gets dropped.
             audioContinuation?.finish()
             audioContinuation = nil
-            recorded = await feedTask?.value ?? []
+            await feedTask?.value
             feedTask = nil
 
             await engine?.finish()
@@ -256,10 +229,6 @@ final class DictationController {
             consumeTask = nil
             engine = nil
 
-            if isComparing {
-                await runComparison()
-                return
-            }
 
             let raw = transcript
             guard !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -327,89 +296,8 @@ final class DictationController {
 
     // MARK: - Helpers
 
-    private func retainForComparison(_ chunk: AudioChunk) {
-        guard isComparing else { return }
-        recorded.append(chunk)
-    }
 
-    /// Replays the recording through every engine and files the results as one group.
-    ///
-    /// Nothing is injected in this mode — the point is to read the outputs side by side,
-    /// and typing one of them into whatever had focus would be a surprise.
-    private func runComparison() async {
-        let chunks = recorded
-        recorded.removeAll(keepingCapacity: false)
-
-        guard !chunks.isEmpty, let holdStarted, let releasedAt else {
-            state = .idle
-            transcript = ""
-            return
-        }
-
-        transcript = "Running both engines…"
-
-        let group = UUID().uuidString
-        let held = releasedAt.timeIntervalSince(holdStarted)
-
-        // Filed one at a time as each engine finishes, so the window fills in progressively
-        // rather than snapping both rows into place at the end.
-        let results = await EngineComparison.run(chunks: chunks) { result in
-            RunLog.record(
-                DictationRun(
-                    date: releasedAt,
-                    engine: result.engine,
-                    audioSeconds: held,
-                    processSeconds: result.seconds,
-                    text: result.text,
-                    group: group
-                )
-            )
-        }
-
-        for result in results {
-            Log.speech.info("""
-                compare · \(result.engine, privacy: .public): \
-                \(result.seconds, format: .fixed(precision: 2))s — \
-                \(result.text, privacy: .public)
-                """)
-        }
-
-        // Wispr Flow, if its hotkey was held for this same utterance. It transcribes in the
-        // cloud, so its row lands after both local engines have already finished — the wait
-        // happens here rather than blocking the rows above from appearing.
-        if WisprReader.isInstalled {
-            transcript = "Waiting for Wispr Flow…"
-            if let wispr = await WisprReader.result(after: holdStarted, timeout: 8) {
-                RunLog.record(
-                    DictationRun(
-                        date: releasedAt,
-                        engine: wispr.engine,
-                        audioSeconds: held,
-                        processSeconds: wispr.seconds,
-                        text: wispr.text,
-                        group: group
-                    )
-                )
-                Log.speech.info("""
-                    compare · \(wispr.engine, privacy: .public): \
-                    \(wispr.seconds, format: .fixed(precision: 2))s — \
-                    \(wispr.text, privacy: .public)
-                    """)
-            } else {
-                Log.speech.info("compare · Wispr Flow: no result (hotkey not held, or timed out)")
-            }
-        }
-
-        self.holdStarted = nil
-        self.releasedAt = nil
-        isComparing = false
-        state = .idle
-        transcript = ""
-
-        if Settings.shared.soundEnabled { NSSound(named: "Glass")?.play() }
-    }
-
-    /// Files the finished utterance for the dashboard.
+    /// Files the finished utterance for the history list.
     ///
     /// `processSeconds` is measured from key release, not from capture start — that's the
     /// wait the user actually experiences, and it's the only number on which a streaming
