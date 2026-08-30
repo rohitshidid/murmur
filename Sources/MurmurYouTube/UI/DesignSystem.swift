@@ -57,19 +57,13 @@ enum DS {
 
         /// Recording. The only red in the app.
         static let record = face(light: 0xE5484D, dark: 0xF2555A)
-        static let recordIdle = face(light: 0xD4D4D8, dark: 0x3F3F46)
 
-        /// A selected row, and its edge.
+        /// A selected row.
         static let selection = face(light: 0xEDEDFD, dark: 0x232340)
-        static let selectionEdge = face(light: 0xC9C9F7, dark: 0x3A3A63)
-        static let focusRing = face(light: 0x5B5BD6, dark: 0x7C7CF0)
         /// Hover, which must be felt rather than seen.
         static let hover = face(light: 0xF4F4F6, dark: 0x232327)
 
-        /// Level instrumentation. Amber and red appear here and nowhere else.
-        static let meterFace = face(light: 0xF1F1F4, dark: 0x1D1D20)
-        static let meterLamp = face(light: 0x5B5BD6, dark: 0x7C7CF0)
-        static let meterNeedle = face(light: 0x18181B, dark: 0xF3F3F5)
+        /// Level instrumentation. Amber appears here and nowhere else.
         static let meterGreen = face(light: 0x1FA463, dark: 0x35C07E)
         static let meterAmber = face(light: 0xC77A0A, dark: 0xE0A33A)
         static let meterRed = face(light: 0xDC3E43, dark: 0xEF5A5F)
@@ -92,8 +86,6 @@ enum DS {
         /// Standard control height. Modern and compact rather than chunky.
         static let keyHeight: CGFloat = 28
         static let keyMinWidth: CGFloat = 56
-        /// Controls no longer travel; they tint and scale a hair.
-        static let keyTravel: CGFloat = 0
         static let keyPressScale: CGFloat = 0.97
 
         /// A status dot.
@@ -159,7 +151,6 @@ enum DS {
     enum Border {
         static let hairline: CGFloat = 1
         static let seam: CGFloat = 1
-        static let bevel: CGFloat = 1
     }
 
     // MARK: - Shadow
@@ -188,9 +179,6 @@ enum DS {
         static let panel = Animation.spring(response: 0.32, dampingFraction: 0.86)
         static let lamp = Animation.easeOut(duration: 0.14)
 
-        /// Level-meter smoothing, in seconds to settle. Rise fast so the meter feels live,
-        /// fall slowly so it doesn't strobe between syllables.
-        static let levelAttack: TimeInterval = 0.08
         static let levelRelease: TimeInterval = 0.32
     }
 }

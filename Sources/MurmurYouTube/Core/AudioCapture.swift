@@ -16,6 +16,16 @@ final class AudioCapture: @unchecked Sendable {
     /// Called on the audio thread with a 0…1 RMS level, for the HUD waveform.
     private nonisolated(unsafe) var onLevel: (@Sendable (Float) -> Void)?
 
+    /// Called on the main thread after the engine was torn down because the audio hardware
+    /// changed underneath it. Set once by the owner; survives `stop()`.
+    var onConfigurationChange: (@Sendable () -> Void)?
+
+    private var configObserver: NSObjectProtocol?
+
+    deinit {
+        if let configObserver { NotificationCenter.default.removeObserver(configObserver) }
+    }
+
     func start(
         outputFormat: AVAudioFormat,
         onBuffer: @escaping @Sendable (AudioChunk) -> Void,
@@ -39,6 +49,23 @@ final class AudioCapture: @unchecked Sendable {
             self?.handle(buffer)
         }
 
+        // Connecting Bluetooth headphones, unplugging an interface, or the system changing
+        // default device all reconfigure the engine *while the tap is running*. Left
+        // unhandled, the audio thread keeps delivering buffers in the old format into state
+        // the main thread is tearing down.
+        configObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange,
+            object: engine,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            Log.audio.info("audio configuration changed — stopping capture")
+            // Read before `stop()`, which is allowed to clear the audio-thread callbacks.
+            let notify = self.onConfigurationChange
+            self.stop()
+            notify?()
+        }
+
         engine.prepare()
         try engine.start()
         isRunning = true
@@ -46,7 +73,16 @@ final class AudioCapture: @unchecked Sendable {
     }
 
     func stop() {
+        // Removed unconditionally, and first: leaving it registered would re-enter this
+        // method on the next device change for an engine that is no longer running.
+        if let configObserver {
+            NotificationCenter.default.removeObserver(configObserver)
+            self.configObserver = nil
+        }
+
         guard isRunning else { return }
+        // The tap comes off before anything it reads is cleared, so an in-flight callback
+        // can never see half-torn-down state.
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         isRunning = false

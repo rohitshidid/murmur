@@ -51,17 +51,41 @@ enum PushToTalkKey: String, CaseIterable, Sendable {
 /// A tap is required rather than `NSEvent.addGlobalMonitor` because `fn` and left/right
 /// modifier discrimination don't surface through the higher-level APIs. This needs
 /// Accessibility permission; without it `CGEvent.tapCreate` returns nil.
-@MainActor
-final class HotkeyMonitor {
+///
+/// **Not `@MainActor`, and the `refcon` is retained.** Both details are load-bearing, and
+/// both come from the same crash: repeated `SIGSEGV`s inside the runtime's executor lookup,
+/// reached from this callback. The tap's `refcon` was `passUnretained`, which keeps nothing
+/// alive — so the callback could resurrect a pointer to a monitor the runtime no longer
+/// considered valid, and the first thing to touch it died. It is now `passRetained` and
+/// balanced in `stop()`.
+///
+/// With that fixed the callback also no longer reaches into actor-isolated state at all: it
+/// decides whether to swallow the event under a plain lock, and hops to the main queue only
+/// to deliver the press and release. `DispatchQueue.main.async` rather than
+/// `Task { @MainActor in }` because the main queue is FIFO — a press can never arrive after
+/// the release that followed it, and a swapped pair would leave the mic open forever.
+final class HotkeyMonitor: @unchecked Sendable {
+    /// Guards every field the tap callback touches. Held only across field access, never
+    /// across a callback into the app.
+    private let lock = NSLock()
+
     private var tap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
-    private var isPressed = false
+    /// The retain balancing `passRetained`, released when the tap goes away.
+    private var refcon: Unmanaged<HotkeyMonitor>?
 
-    /// When the current press went down, used to tell a tap from a hold.
+    private var isPressed = false
     private var pressedAt: Date?
     /// Set when a press was consumed to end a latched session, so the release that follows
     /// it isn't read as a fresh tap and immediately re-latches.
     private var ignoreNextRelease = false
+    private var isLatchedStorage = false
+
+    private var keyStorage: PushToTalkKey = .rightCommand
+    private var latchOnTapStorage = true
+    private var onPressStorage: (@Sendable () -> Void)?
+    private var onReleaseStorage: (@Sendable () -> Void)?
+    private var onLatchChangeStorage: (@Sendable (Bool) -> Void)?
 
     /// A press shorter than this is a *tap*; anything longer is a hold.
     ///
@@ -70,16 +94,35 @@ final class HotkeyMonitor {
     /// short is a gesture, not speech.
     private static let tapThreshold: TimeInterval = 0.35
 
-    /// True while a tap has locked recording on. Read by the HUD.
-    private(set) var isLatched = false
+    var key: PushToTalkKey {
+        get { lock.withLock { keyStorage } }
+        set { lock.withLock { keyStorage = newValue } }
+    }
 
-    var key: PushToTalkKey = .rightCommand
     /// Whether a quick tap latches recording on. Mirrors `Settings.latchOnTap`.
-    var latchOnTap = true
-    var onPress: (() -> Void)?
-    var onRelease: (() -> Void)?
+    var latchOnTap: Bool {
+        get { lock.withLock { latchOnTapStorage } }
+        set { lock.withLock { latchOnTapStorage = newValue } }
+    }
+
+    /// True while a tap has locked recording on. Read by the HUD.
+    var isLatched: Bool { lock.withLock { isLatchedStorage } }
+
+    var onPress: (@Sendable () -> Void)? {
+        get { lock.withLock { onPressStorage } }
+        set { lock.withLock { onPressStorage = newValue } }
+    }
+
+    var onRelease: (@Sendable () -> Void)? {
+        get { lock.withLock { onReleaseStorage } }
+        set { lock.withLock { onReleaseStorage = newValue } }
+    }
+
     /// Fired whenever `isLatched` changes, so the HUD can show the locked state.
-    var onLatchChange: ((Bool) -> Void)?
+    var onLatchChange: (@Sendable (Bool) -> Void)? {
+        get { lock.withLock { onLatchChangeStorage } }
+        set { lock.withLock { onLatchChangeStorage = newValue } }
+    }
 
     /// - Returns: `false` if the tap couldn't be created — almost always missing Accessibility permission.
     @discardableResult
@@ -87,7 +130,7 @@ final class HotkeyMonitor {
         stop()
 
         let mask = (1 << CGEventType.flagsChanged.rawValue)
-        let refcon = Unmanaged.passUnretained(self).toOpaque()
+        let retained = Unmanaged.passRetained(self)
 
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
@@ -98,29 +141,29 @@ final class HotkeyMonitor {
                 guard let refcon else { return Unmanaged.passUnretained(event) }
                 let monitor = Unmanaged<HotkeyMonitor>.fromOpaque(refcon).takeUnretainedValue()
 
-                // CGEvent isn't Sendable, so pull out the plain values before crossing into
-                // actor-isolated code. The tap was added to the main run loop, so this
-                // callback genuinely does run on the main thread.
+                // CGEvent isn't Sendable, so the plain values come out here. `handle` is
+                // lock-guarded and touches no actor, so there is nothing to assume.
                 let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
                 let flags = event.flags
-                let consume = MainActor.assumeIsolated {
-                    monitor.handle(type: type, keyCode: keyCode, flags: flags)
-                }
+                let consume = monitor.handle(type: type, keyCode: keyCode, flags: flags)
                 return consume ? nil : Unmanaged.passUnretained(event)
             },
-            userInfo: refcon
+            userInfo: retained.toOpaque()
         ) else {
+            // Balance the retain the tap never took ownership of.
+            retained.release()
             Log.hotkey.error("tapCreate failed — Accessibility permission missing?")
             return false
         }
 
         self.tap = tap
+        self.refcon = retained
         let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
         runLoopSource = source
         CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
 
-        Log.hotkey.info("listening for \(self.key.displayName)")
+        Log.hotkey.info("listening for \(self.key.displayName, privacy: .public)")
         return true
     }
 
@@ -133,7 +176,12 @@ final class HotkeyMonitor {
         }
         tap = nil
         runLoopSource = nil
-        isPressed = false
+
+        // After the source is off the run loop no further callback can arrive, so the
+        // retain taken in `start()` can be given back.
+        refcon?.release()
+        refcon = nil
+
         clearLatch()
     }
 
@@ -143,14 +191,28 @@ final class HotkeyMonitor {
     /// cancel, the Stop button — after which a latched monitor would otherwise still think
     /// it owned a live session and swallow the next press to "stop" it.
     func clearLatch() {
-        pressedAt = nil
-        ignoreNextRelease = false
-        guard isLatched else { return }
-        isLatched = false
-        onLatchChange?(false)
+        let (wasLatched, handler): (Bool, (@Sendable (Bool) -> Void)?) = lock.withLock {
+            isPressed = false
+            pressedAt = nil
+            ignoreNextRelease = false
+            let was = isLatchedStorage
+            isLatchedStorage = false
+            return (was, onLatchChangeStorage)
+        }
+        guard wasLatched else { return }
+        DispatchQueue.main.async { handler?(false) }
     }
 
     // MARK: - Tap callback
+
+    /// What the event means, decided under the lock and acted on outside it.
+    private enum Outcome {
+        case ignore
+        case press((@Sendable () -> Void)?)
+        case release((@Sendable () -> Void)?)
+        case latch((@Sendable (Bool) -> Void)?)
+        case unlatch((@Sendable (Bool) -> Void)?, (@Sendable () -> Void)?)
+    }
 
     /// - Returns: `true` if the event should be swallowed rather than passed along.
     private func handle(type: CGEventType, keyCode: Int64, flags: CGEventFlags) -> Bool {
@@ -159,43 +221,62 @@ final class HotkeyMonitor {
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
             return false
         }
+        guard type == .flagsChanged else { return false }
 
-        guard type == .flagsChanged, keyCode == key.keyCode else { return false }
+        var consume = false
+        var outcome = Outcome.ignore
 
-        let nowPressed = flags.contains(key.flag)
-        guard nowPressed != isPressed else { return false }
-        isPressed = nowPressed
+        lock.lock()
+        if keyCode == keyStorage.keyCode {
+            let nowPressed = flags.contains(keyStorage.flag)
+            if nowPressed != isPressed {
+                isPressed = nowPressed
+                outcome = nowPressed ? keyWentDownLocked() : keyWentUpLocked()
+                consume = keyStorage.shouldConsumeEvent
+            }
+        }
+        lock.unlock()
 
-        if nowPressed { keyWentDown() } else { keyWentUp() }
+        // Delivered on the main queue, in order, outside the lock.
+        switch outcome {
+        case .ignore:
+            break
+        case .press(let handler), .release(let handler):
+            DispatchQueue.main.async { handler?() }
+        case .latch(let change):
+            DispatchQueue.main.async { change?(true) }
+        case .unlatch(let change, let release):
+            DispatchQueue.main.async {
+                change?(false)
+                release?()
+            }
+        }
 
-        return key.shouldConsumeEvent
+        return consume
     }
 
     /// Hold to talk; tap to lock on.
     ///
     /// The two gestures are told apart on *release*, by how long the key was held — which
-    /// is what lets push-to-talk stay instant. Deferring `onPress` until a double-tap
+    /// is what lets push-to-talk stay instant. Deferring the press until a double-tap
     /// window elapsed would put 300ms of latency in front of every utterance, and the
     /// beginning of a sentence is exactly the part you can't afford to clip.
-    private func keyWentDown() {
+    private func keyWentDownLocked() -> Outcome {
         // While latched, a press is the stop gesture rather than the start of one.
-        if isLatched {
-            isLatched = false
+        if isLatchedStorage {
+            isLatchedStorage = false
             ignoreNextRelease = true
-            onLatchChange?(false)
-            onRelease?()
-            return
+            return .unlatch(onLatchChangeStorage, onReleaseStorage)
         }
-
         pressedAt = Date()
-        onPress?()
+        return .press(onPressStorage)
     }
 
-    private func keyWentUp() {
+    private func keyWentUpLocked() -> Outcome {
         // The tail of the press that stopped a latched session.
         if ignoreNextRelease {
             ignoreNextRelease = false
-            return
+            return .ignore
         }
 
         let held = pressedAt.map { Date().timeIntervalSince($0) } ?? .greatestFiniteMagnitude
@@ -204,12 +285,11 @@ final class HotkeyMonitor {
         // A tap keeps the mic open and hands control to the next press. Holding a key for a
         // three-minute thought is the thing that stops people using push-to-talk for
         // anything long.
-        if latchOnTap, held < Self.tapThreshold {
-            isLatched = true
-            onLatchChange?(true)
-            return
+        if latchOnTapStorage, held < Self.tapThreshold {
+            isLatchedStorage = true
+            return .latch(onLatchChangeStorage)
         }
 
-        onRelease?()
+        return .release(onReleaseStorage)
     }
 }

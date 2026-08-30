@@ -87,14 +87,38 @@ final class DictationController {
 
     /// - Returns: `false` if the hotkey tap couldn't be installed (missing Accessibility).
     @discardableResult
+    /// Ends the current utterance when the audio hardware changes mid-recording.
+    ///
+    /// Capture is already gone by the time this runs; this exists so the state machine and
+    /// the HUD don't sit waiting for audio that will never arrive.
+    private func handleAudioConfigurationChange() {
+        guard state.isActive else { return }
+        Log.audio.info("audio device changed mid-utterance — cancelling")
+        fail("Audio device changed. Give it a moment and try again.")
+    }
+
     func activate() -> Bool {
         hotkey.key = Settings.shared.pushToTalkKey
         hotkey.latchOnTap = Settings.shared.latchOnTap
-        hotkey.onPress = { [weak self] in self?.beginDictation() }
-        hotkey.onRelease = { [weak self] in self?.endDictation() }
-        hotkey.onLatchChange = { [weak self] latched in self?.isLatched = latched }
+        // `assumeIsolated` is sound here specifically because `HotkeyMonitor` delivers
+        // these on `DispatchQueue.main`. It is not what was crashing: the tap's `refcon`
+        // was unretained, so the callback could revive a stale pointer, and the executor
+        // check was simply the first thing to touch it.
+        hotkey.onPress = { [weak self] in
+            MainActor.assumeIsolated { self?.beginDictation() }
+        }
+        hotkey.onRelease = { [weak self] in
+            MainActor.assumeIsolated { self?.endDictation() }
+        }
+        hotkey.onLatchChange = { [weak self] latched in
+            MainActor.assumeIsolated { self?.isLatched = latched }
+        }
 
-        shortcuts.onUndo = { TextInjector.undoLast() }
+        shortcuts.onUndo = { MainActor.assumeIsolated { TextInjector.undoLast() } }
+
+        capture.onConfigurationChange = { [weak self] in
+            MainActor.assumeIsolated { self?.handleAudioConfigurationChange() }
+        }
         // Both taps need the same grant, so a failure here is the same failure — reported
         // once, by the push-to-talk tap, which is the one the user is waiting on.
         shortcuts.start()

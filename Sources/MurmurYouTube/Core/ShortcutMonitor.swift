@@ -11,8 +11,10 @@ import Foundation
 ///
 /// Needs the same Accessibility grant as `HotkeyMonitor`, and gets it for free — if the
 /// push-to-talk tap was created, this one will be too.
-@MainActor
-final class ShortcutMonitor {
+/// Not `@MainActor`, and the `refcon` is retained — for the same reason as
+/// `HotkeyMonitor`: an unretained `refcon` let this callback revive a stale pointer and
+/// crash inside the runtime. See that type for the full account.
+final class ShortcutMonitor: @unchecked Sendable {
     /// ⌥⌘Z — undo the last dictation.
     ///
     /// Chosen to sit next to the undo people already know while staying clear of it: ⌘Z is
@@ -31,17 +33,24 @@ final class ShortcutMonitor {
         .maskCommand, .maskAlternate, .maskShift, .maskControl,
     ]
 
+    private let lock = NSLock()
     private var tap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
+    /// The retain balancing `passRetained`, released when the tap goes away.
+    private var refcon: Unmanaged<ShortcutMonitor>?
+    private var onUndoStorage: (@Sendable () -> Void)?
 
-    var onUndo: (() -> Void)?
+    var onUndo: (@Sendable () -> Void)? {
+        get { lock.withLock { onUndoStorage } }
+        set { lock.withLock { onUndoStorage = newValue } }
+    }
 
     @discardableResult
     func start() -> Bool {
         stop()
 
         let mask = (1 << CGEventType.keyDown.rawValue)
-        let refcon = Unmanaged.passUnretained(self).toOpaque()
+        let retained = Unmanaged.passRetained(self)
 
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
@@ -61,13 +70,15 @@ final class ShortcutMonitor {
                 }
                 return consume ? nil : Unmanaged.passUnretained(event)
             },
-            userInfo: refcon
+            userInfo: retained.toOpaque()
         ) else {
+            retained.release()
             Log.hotkey.error("shortcut tapCreate failed — Accessibility permission missing?")
             return false
         }
 
         self.tap = tap
+        self.refcon = retained
         let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
         runLoopSource = source
         CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
@@ -86,6 +97,11 @@ final class ShortcutMonitor {
         }
         tap = nil
         runLoopSource = nil
+
+        // No further callback can arrive once the source is off the run loop, so the
+        // retain taken in `start()` can be given back.
+        refcon?.release()
+        refcon = nil
     }
 
     /// - Returns: `true` if the event should be swallowed rather than passed along.
@@ -98,11 +114,12 @@ final class ShortcutMonitor {
         guard type == .keyDown, keyCode == Self.undoKeyCode else { return false }
         guard flags.intersection(Self.modifierMask) == Self.undoFlags else { return false }
 
-        // Only swallow the chord when there's something to undo. Otherwise ⌥⌘Z is passed
-        // through to whatever app has focus, which may well have its own use for it.
-        guard TextInjector.canUndo else { return false }
-
-        onUndo?()
+        // Swallowed unconditionally now. Deciding here whether there is anything to undo
+        // would mean reading main-actor state synchronously from a run-loop callback, which
+        // is the shape that has been crashing; `undoLast()` already no-ops when there is
+        // nothing to take back, so the cost is that ⌥⌘Z stops reaching the focused app.
+        let handler = onUndo
+        DispatchQueue.main.async { handler?() }
         return true
     }
 }

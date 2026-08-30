@@ -92,6 +92,16 @@ final class MeetingRecorder {
                 return
             }
 
+            // A device change stops the mic engine outright. Finish with what was
+            // captured rather than leaving a recording running that records nothing.
+            mic.onConfigurationChange = { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self, self.state.isRecording else { return }
+                    Log.audio.info("audio device changed mid-meeting — finishing early")
+                    self.stop()
+                }
+            }
+
             startedAt = Date()
             state = .recording
             startTicking()
