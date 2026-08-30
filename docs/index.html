@@ -1,0 +1,1021 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Murmur — hold a key, talk, let go</title>
+<meta name="description" content="Push-to-talk dictation for macOS that runs entirely on your Mac. Hold a key, talk, release — cleaned-up text lands in whatever field has focus, and the overlay never steals it.">
+<link rel="icon" href="icon.png">
+<meta property="og:title" content="Murmur — push-to-talk dictation for macOS">
+<meta property="og:description" content="Hold a key, talk, let go. On-device speech, an on-device cleanup pass, and an overlay that never takes focus. Free and open source.">
+<meta property="og:image" content="icon.png">
+<meta property="og:type" content="website">
+<style>
+/* ------------------------------------------------------------------ tokens
+   These are the app's own tokens, lifted from Sources/Murmur/UI/DesignSystem.swift
+   and Tools/makeicon.swift so the site and the app cannot drift apart. The app
+   follows the system theme; this page is light only, deliberately, so that what
+   you see here is what everyone sees. */
+:root {
+  --ink:        #18181B;   /* DS.Color.ink */
+  --ink-soft:   #71717A;   /* DS.Color.inkSecondary */
+  --ink-faint:  #8A8A93;   /* DS.Color.silkscreen */
+  --bg:         #ffffff;   /* DS.Color.panel */
+  --bg-tint:    #F6F6F8;   /* DS.Color.chassis */
+  --well:       #F1F1F4;   /* DS.Color.well */
+  --line:       #E4E4E8;   /* DS.Color.seam */
+  --line-soft:  rgba(24, 24, 27, .06);
+
+  --indigo:     #5B5BD6;   /* DS.Color.accent — the one accent */
+  --indigo-deep:#4A4AC2;
+  --record:     #E5484D;   /* DS.Color.record — the only red in the app */
+  --green:      #1FA463;   /* DS.Color.meterGreen */
+  --amber:      #C77A0A;   /* DS.Color.meterAmber */
+
+  /* The icon's diagonal gradient, from Tools/makeicon.swift. */
+  --wave-a:     #6B8CFF;
+  --wave-b:     #C278FF;
+
+  --shadow-sm:  0 1px 2px rgba(24,24,27,.05), 0 4px 14px rgba(24,24,27,.05);
+  --shadow-lg:  0 2px 6px rgba(24,24,27,.04), 0 24px 60px rgba(24,24,27,.13);
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
+          "Helvetica Neue", Helvetica, Arial, sans-serif;
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 17px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+.wrap { width: min(1120px, 100% - 48px); margin-inline: auto; }
+.narrow { width: min(760px, 100% - 48px); margin-inline: auto; }
+
+a { color: var(--indigo); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* Display type: big, tight, and set in the system font — the closer to the
+   OS's own voice the better, for something that only runs on that OS. */
+h1, h2, h3 { margin: 0; font-weight: 700; letter-spacing: -0.028em; line-height: 1.06; }
+h1 { font-size: clamp(2.7rem, 7.2vw, 4.9rem); letter-spacing: -0.035em; }
+h2 { font-size: clamp(2rem, 4.6vw, 3.3rem); }
+h3 { font-size: 1.16rem; letter-spacing: -0.012em; line-height: 1.3; }
+
+.lede {
+  font-size: clamp(1.13rem, 2.1vw, 1.42rem);
+  font-weight: 300;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  letter-spacing: -0.011em;
+}
+.lede strong { font-weight: 600; color: var(--ink); }
+
+code {
+  font-family: var(--mono);
+  font-size: .86em;
+  background: var(--bg-tint);
+  border: 1px solid var(--line-soft);
+  padding: .12em .42em;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+kbd {
+  font-family: var(--sans); font-size: .82em; font-weight: 600;
+  background: var(--bg-tint); border: 1px solid var(--line);
+  border-bottom-width: 2px; padding: .1em .45em; border-radius: 6px;
+  white-space: nowrap;
+}
+
+/* --------------------------------------------------------------- reveal */
+.reveal {
+  opacity: 0;
+  transform: translateY(26px);
+  transition: opacity .75s cubic-bezier(.22,.61,.36,1),
+              transform .75s cubic-bezier(.22,.61,.36,1);
+  transition-delay: calc(var(--i, 0) * 90ms);
+  will-change: opacity, transform;
+}
+.reveal.in { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  .reveal { opacity: 1; transform: none; transition: none; }
+}
+
+/* ------------------------------------------------------------------- nav */
+.nav {
+  position: sticky; top: 0; z-index: 50;
+  background: rgba(255,255,255,.76);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 1px solid transparent;
+  transition: border-color .3s ease;
+}
+.nav.stuck { border-bottom-color: var(--line); }
+.nav-in { display: flex; align-items: center; gap: 11px; height: 56px; }
+.nav-in img { width: 25px; height: 25px; border-radius: 7px; }
+.nav-name { font-weight: 600; font-size: 15px; letter-spacing: -0.015em; }
+.nav-links { margin-left: auto; display: flex; align-items: center; gap: 26px; }
+.nav-links a { color: var(--ink-soft); font-size: 14px; font-weight: 450; }
+.nav-links a:hover { color: var(--ink); text-decoration: none; }
+.nav-links .btn { color: #fff; }
+@media (max-width: 760px) { .nav-links a.opt { display: none; } }
+
+/* --------------------------------------------------------------- buttons */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  border-radius: 999px;
+  font-weight: 550;
+  letter-spacing: -0.011em;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: transform .18s ease, box-shadow .25s ease,
+              background-color .2s ease, border-color .2s ease;
+  white-space: nowrap;
+}
+.btn:hover { text-decoration: none; }
+.btn-lg { font-size: 1.02rem; padding: 15px 30px; }
+.btn-sm { font-size: .85rem; padding: 7px 16px; }
+.btn-fill { background: var(--indigo); color: #fff; box-shadow: 0 6px 20px rgba(91,91,214,.28); }
+.btn-fill:hover { background: var(--indigo-deep); transform: translateY(-1.5px); box-shadow: 0 10px 26px rgba(91,91,214,.34); }
+.btn-ghost { background: rgba(24,24,27,.045); color: var(--ink); }
+.btn-ghost:hover { background: rgba(24,24,27,.08); transform: translateY(-1.5px); }
+.btn .arrow { transition: transform .2s ease; }
+.btn:hover .arrow { transform: translateX(2px); }
+
+/* ------------------------------------------------------------------ hero */
+.hero { position: relative; padding: clamp(60px, 9vw, 108px) 0 0; text-align: center; }
+/* The soft colour behind the headline, in the icon's own gradient — the page's
+   only real flourish, and the reason the top of it does not read as a plain
+   white document. */
+.hero::before {
+  content: ""; position: absolute; inset: -220px 0 auto; height: 760px; z-index: -1;
+  background:
+    radial-gradient(680px 420px at 50% 12%, rgba(107,140,255,.16), transparent 68%),
+    radial-gradient(520px 360px at 78% 4%,  rgba(194,120,255,.13), transparent 66%),
+    radial-gradient(460px 340px at 20% 8%,  rgba(91,91,214,.10), transparent 66%);
+  pointer-events: none;
+}
+.hero-icon { width: 92px; height: 92px; }
+.hero h1 { margin: 24px auto 0; max-width: 13ch; }
+.hero .lede { margin: 22px auto 0; max-width: 55ch; }
+.hero-cta { margin-top: 34px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+.hero-note { margin-top: 16px; font-size: .82rem; color: var(--ink-faint); }
+.hero-note a { color: var(--ink-faint); text-decoration: underline; text-underline-offset: 2px; }
+/* Filled in from the GitHub releases API; falls back to the static text. */
+#ver { font-variant-numeric: tabular-nums; }
+
+/* ------------------------------------------------------- the app window */
+/* Structured so a real screenshot drops straight in: replace the contents of
+   .win-body with <img src="screenshot.png" alt="…"> and nothing else moves. */
+.stage { margin-top: clamp(44px, 6vw, 76px); perspective: 1800px; position: relative; }
+.win {
+  margin: 0 auto;
+  max-width: 940px;
+  border-radius: 14px;
+  background: var(--bg-tint);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  transform: rotateX(4deg) scale(.99);
+  transform-origin: 50% 0;
+  transition: transform 1s cubic-bezier(.22,.61,.36,1);
+}
+.reveal.in .win, .win.flat { transform: none; }
+.win-bar {
+  display: flex; align-items: center; gap: 7px;
+  padding: 10px 14px; background: #f2f2f5; border-bottom: 1px solid var(--line);
+}
+.win-bar i { width: 11px; height: 11px; border-radius: 50%; background: #dcdce0; }
+.win-bar i:nth-child(1) { background: #ff5f57; }
+.win-bar i:nth-child(2) { background: #febc2e; }
+.win-bar i:nth-child(3) { background: #28c840; }
+.win-title { margin-left: 10px; font-size: 12px; color: var(--ink-faint); }
+.win-body { font-size: 12.5px; text-align: left; background: var(--bg-tint); }
+.win-body img { display: block; width: 100%; height: auto; }
+
+/* The transport strip: what the app calls the row of controls above the list. */
+.transport { display: flex; align-items: center; gap: 14px; padding: 14px 16px; flex-wrap: wrap; }
+.rec {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: #fff; border: 1px solid var(--line); border-radius: 8px;
+  padding: 6px 13px; font-weight: 550; font-size: 12px; box-shadow: var(--shadow-sm);
+}
+.rec .lamp {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--record);
+  box-shadow: 0 0 0 3px rgba(229,72,77,.18);
+  animation: pulse 1.9s ease-in-out infinite;
+}
+@keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .45 } }
+@media (prefers-reduced-motion: reduce) { .rec .lamp { animation: none } }
+.meter { display: flex; align-items: flex-end; gap: 3px; height: 18px; }
+.meter i { width: 3px; border-radius: 2px; background: var(--indigo); opacity: .85; }
+.transport .key { margin-left: auto; color: var(--ink-faint); font-size: 11px; }
+
+.seg { display: inline-flex; background: var(--well); border-radius: 8px; padding: 2px; gap: 2px; margin: 0 16px; }
+.seg span { padding: 5px 14px; border-radius: 6px; font-size: 12px; color: var(--ink-soft); }
+.seg span.on { background: #fff; color: var(--ink); font-weight: 600; box-shadow: var(--shadow-sm); }
+
+.list { margin: 12px 16px 16px; background: var(--well); border-radius: 12px; padding: 6px; }
+.row {
+  display: grid; grid-template-columns: 1fr auto; gap: 4px 14px;
+  background: #fff; border-radius: 8px; padding: 11px 13px; margin-bottom: 5px;
+  align-items: baseline;
+}
+.row:last-child { margin-bottom: 0; }
+.row .t { color: var(--ink); line-height: 1.45; }
+.row .m { color: var(--ink-faint); font-size: 10.5px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.row .tags { grid-column: 1 / -1; display: flex; gap: 6px; flex-wrap: wrap; margin-top: 3px; }
+.tag {
+  font-size: 10px; font-weight: 600; letter-spacing: .02em;
+  padding: 2px 7px; border-radius: 20px; border: 1px solid;
+}
+.tag.fix  { color: var(--indigo); border-color: rgba(91,91,214,.30); background: rgba(91,91,214,.07); }
+.tag.scr  { color: var(--green);  border-color: rgba(31,164,99,.32);  background: rgba(31,164,99,.07); }
+.tag.app  { color: var(--ink-soft); border-color: var(--line); background: var(--bg-tint); }
+@media (max-width: 620px) { .row .m { display: none } }
+
+/* The HUD, floating over the window exactly as it does over your screen. */
+.hud {
+  position: relative; z-index: 2;
+  margin: -34px auto 0;
+  width: min(340px, 88%);
+  display: flex; align-items: center; gap: 12px;
+  padding: 13px 20px;
+  border-radius: 999px;
+  background: rgba(252,252,253,.86);
+  backdrop-filter: saturate(180%) blur(18px);
+  -webkit-backdrop-filter: saturate(180%) blur(18px);
+  border: 1px solid rgba(24,24,27,.07);
+  box-shadow: 0 12px 34px rgba(24,24,27,.18), 0 2px 6px rgba(24,24,27,.10);
+  text-align: left;
+}
+.hud .wave { display: flex; align-items: center; gap: 3px; height: 26px; flex: none; }
+.hud .wave i {
+  width: 3px; border-radius: 2px;
+  background: linear-gradient(180deg, var(--wave-a), var(--wave-b));
+}
+.hud .said { font-size: 12.5px; color: var(--ink); line-height: 1.35; overflow: hidden; }
+.hud .lock { margin-left: auto; color: var(--indigo); font-size: 12px; flex: none; }
+
+/* ----------------------------------------------------------------- credit */
+.credit-bar {
+  margin-top: 34px; font-size: .8rem; color: var(--ink-faint);
+}
+.credit-bar a { color: var(--ink-soft); }
+
+/* --------------------------------------------------------------- sections */
+section { padding: clamp(76px, 11vw, 138px) 0; }
+section.tint { background: var(--bg-tint); }
+.eyebrow {
+  font-size: .8rem; font-weight: 650; letter-spacing: .085em; text-transform: uppercase;
+  color: var(--indigo); margin-bottom: 16px;
+}
+.center { text-align: center; }
+.center .lede { margin-inline: auto; max-width: 56ch; }
+.sec-head h2 { max-width: 18ch; }
+.center.sec-head h2 { margin-inline: auto; }
+.sec-head .lede { margin-top: 20px; }
+
+/* ----------------------------------------------------------------- stats */
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.stat { padding: 30px 26px; background: #fff; border: 1px solid var(--line); border-radius: 18px; }
+section.tint .stat { box-shadow: var(--shadow-sm); }
+.stat b { display: block; font-size: 2.05rem; font-weight: 700; letter-spacing: -0.03em; line-height: 1.1; }
+.stat span { display: block; margin-top: 7px; font-size: .89rem; color: var(--ink-soft); line-height: 1.45; }
+
+/* ----------------------------------------------------------------- cards */
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(272px, 1fr)); gap: 18px; margin-top: 54px; }
+.card {
+  padding: 30px 28px; background: #fff; border: 1px solid var(--line);
+  border-radius: 20px; box-shadow: var(--shadow-sm);
+  transition: transform .3s cubic-bezier(.22,.61,.36,1), box-shadow .3s ease;
+}
+.card:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); }
+.card .ico {
+  width: 40px; height: 40px; border-radius: 11px; margin-bottom: 18px;
+  display: grid; place-items: center; font-size: 19px;
+  background: linear-gradient(150deg, rgba(107,140,255,.14), rgba(194,120,255,.14));
+}
+.card p { margin: 9px 0 0; color: var(--ink-soft); font-size: .94rem; line-height: 1.58; }
+
+/* -------------------------------------------------------------- features */
+.feature { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(38px, 6vw, 84px); align-items: center; }
+.feature + .feature { margin-top: clamp(76px, 10vw, 132px); }
+.feature.flip .feature-text { order: 2; }
+.feature h3 { font-size: clamp(1.6rem, 3.2vw, 2.25rem); font-weight: 700; letter-spacing: -0.028em; }
+.feature p { margin: 18px 0 0; color: var(--ink-soft); font-size: 1.04rem; line-height: 1.6; font-weight: 300; }
+.feature p strong { font-weight: 600; color: var(--ink); }
+@media (max-width: 800px) {
+  .feature { grid-template-columns: 1fr; gap: 32px; }
+  .feature.flip .feature-text { order: 0; }
+}
+
+/* Small panels that sit beside each feature. */
+.panel { background: #fff; border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow-lg); overflow: hidden; font-size: 12.5px; }
+.panel-head {
+  padding: 11px 16px; border-bottom: 1px solid var(--line);
+  font-weight: 600; font-size: 12.5px; display: flex; align-items: center; gap: 8px;
+  background: var(--bg-tint);
+}
+.panel-head .right { margin-left: auto; font-weight: 700; color: var(--green); }
+.panel-row { display: flex; align-items: center; gap: 10px; padding: 11px 16px; border-bottom: 1px solid var(--line-soft); }
+.panel-row:last-child { border-bottom: 0; }
+.panel-row .p { font-family: var(--mono); font-size: 11px; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.panel-row .s { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 550; white-space: nowrap; }
+.panel-body { padding: 16px; }
+.panel-lab { font-size: 10px; font-weight: 650; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-faint); }
+.panel-said { margin: 7px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--ink-soft); }
+.panel-said em { font-style: normal; background: rgba(229,72,77,.10); border-radius: 4px; padding: 0 3px; color: var(--record); }
+.panel-out { margin: 16px 0 0; padding-top: 16px; border-top: 1px solid var(--line-soft); font-size: 12.5px; line-height: 1.55; }
+.panel-out b { font-weight: 600; }
+.arrow-down { display: block; text-align: center; color: var(--ink-faint); font-size: 13px; margin: 12px 0 0; }
+
+.pair { display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px; align-items: center; padding: 11px 16px; border-bottom: 1px solid var(--line-soft); }
+.pair:last-child { border-bottom: 0; }
+.pair .heard { color: var(--ink-soft); font-size: 12px; }
+.pair .to { color: var(--ink-faint); font-size: 11px; }
+.pair .wrote { font-family: var(--mono); font-size: 11.5px; color: var(--indigo); text-align: right; overflow: hidden; text-overflow: ellipsis; }
+
+/* ----------------------------------------------------------------- table */
+.tbl-wrap { margin-top: 54px; border: 1px solid var(--line); border-radius: 20px; overflow: hidden; background: #fff; box-shadow: var(--shadow-sm); }
+.tbl-scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: .95rem; min-width: 640px; }
+th, td { text-align: left; padding: 18px 22px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+thead th { font-size: .72rem; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-faint); font-weight: 650; background: var(--bg-tint); }
+tbody tr:last-child td { border-bottom: 0; }
+tbody tr { transition: background-color .2s ease; }
+tbody tr:hover { background: #fbfbfc; }
+td.what { font-weight: 600; white-space: nowrap; }
+td.what .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 9px; vertical-align: 1px; }
+.dot.g { background: var(--green); }
+.dot.a { background: var(--amber); }
+.dot.i { background: var(--indigo); }
+td span.sub { display: block; margin-top: 4px; font-weight: 400; font-size: .86rem; color: var(--ink-faint); white-space: normal; }
+
+/* ---------------------------------------------------------------- steps */
+.steps { counter-reset: s; margin-top: 50px; display: grid; gap: 14px; }
+.step {
+  display: grid; grid-template-columns: 42px 1fr; gap: 20px; align-items: start;
+  padding: 26px 28px; background: #fff; border: 1px solid var(--line); border-radius: 18px;
+}
+.step::before {
+  counter-increment: s; content: counter(s);
+  width: 32px; height: 32px; border-radius: 50%;
+  background: var(--indigo); color: #fff;
+  display: grid; place-items: center; font-size: .92rem; font-weight: 650;
+}
+.step h3 { font-size: 1.04rem; }
+.step p { margin: 7px 0 0; color: var(--ink-soft); font-size: .94rem; line-height: 1.55; }
+
+.note {
+  margin-top: 30px; padding: 26px 30px; border-radius: 18px;
+  background: rgba(199,122,10,.055); border: 1px solid rgba(199,122,10,.20);
+}
+.note h3 { font-size: 1.02rem; }
+.note p { margin: 9px 0 0; color: var(--ink-soft); font-size: .93rem; line-height: 1.6; }
+
+pre {
+  margin: 26px 0 0; padding: 22px 24px; border-radius: 16px;
+  background: #18181B; color: #e9e9ee; overflow-x: auto;
+  font-family: var(--mono); font-size: 13px; line-height: 1.75;
+  box-shadow: var(--shadow-sm);
+}
+pre code { background: none; border: 0; padding: 0; color: inherit; white-space: pre; }
+pre .c { color: #8b8b97; }
+pre .k { color: #a5b4ff; }
+
+/* -------------------------------------------------------------- roadmap */
+.todo { margin-top: 46px; display: grid; gap: 10px; }
+.todo li {
+  list-style: none; display: flex; gap: 14px; align-items: baseline;
+  padding: 18px 22px; background: #fff; border: 1px solid var(--line); border-radius: 14px;
+  font-size: .94rem; color: var(--ink-soft); line-height: 1.55;
+}
+.todo li b { color: var(--ink); font-weight: 600; flex: none; min-width: 9.5rem; }
+@media (max-width: 620px) { .todo li { flex-direction: column; gap: 4px } }
+
+/* ------------------------------------------------------------ final cta */
+.final { text-align: center; }
+.final h2 { max-width: 16ch; margin-inline: auto; }
+.final .hero-cta { margin-top: 32px; }
+
+/* ---------------------------------------------------------------- footer */
+footer { padding: 54px 0 72px; border-top: 1px solid var(--line); background: var(--bg-tint); }
+.foot { display: flex; gap: 28px; align-items: center; flex-wrap: wrap; font-size: .87rem; color: var(--ink-faint); }
+.foot a { color: var(--ink-soft); }
+.foot .sep { margin-left: auto; }
+.foot p { margin: 18px 0 0; width: 100%; line-height: 1.6; max-width: 76ch; }
+</style>
+</head>
+<body>
+
+<nav class="nav" id="nav">
+  <div class="wrap nav-in">
+    <img src="icon.png" alt="">
+    <span class="nav-name">Murmur</span>
+    <div class="nav-links">
+      <a href="#how" class="opt">How it works</a>
+      <a href="#engines" class="opt">Engines</a>
+      <a href="#privacy" class="opt">Privacy</a>
+      <a href="#install" class="opt">Install</a>
+      <a href="https://github.com/rohitshidid/murmur" class="opt">GitHub</a>
+      <a class="btn btn-sm btn-fill" href="https://github.com/rohitshidid/murmur/releases/latest/download/Murmur-arm64.dmg">Download</a>
+    </div>
+  </div>
+</nav>
+
+<!-- ------------------------------------------------------------------ hero -->
+<header class="hero">
+  <div class="wrap">
+    <img class="hero-icon reveal" src="icon.png" alt="Murmur icon">
+    <h1 class="reveal" style="--i:1">Hold a key. Talk. Let go.</h1>
+    <p class="lede reveal" style="--i:2">
+      Push-to-talk dictation for macOS that runs <strong>entirely on your Mac</strong>.
+      Cleaned-up text lands in whatever field has focus — and the overlay that shows
+      you what you're saying <strong>never takes that focus away</strong>.
+    </p>
+    <div class="hero-cta reveal" style="--i:3">
+      <a class="btn btn-lg btn-fill" href="https://github.com/rohitshidid/murmur/releases/latest/download/Murmur-arm64.dmg">
+        Download for macOS
+      </a>
+      <a class="btn btn-lg btn-ghost" href="https://github.com/rohitshidid/murmur">
+        View the source <span class="arrow">→</span>
+      </a>
+    </div>
+    <p class="hero-note reveal" style="--i:4">
+      <span id="ver">Apple silicon</span> · macOS 26 Tahoe or later · free and open source · no account, no cloud<br>
+      Unsigned, so the first launch needs a right-click → Open — <a href="#install">here's how</a>
+    </p>
+  </div>
+
+  <div class="wrap stage reveal" style="--i:5">
+    <figure class="win" style="margin:0 auto">
+      <div class="win-bar"><i></i><i></i><i></i><span class="win-title">Murmur</span></div>
+      <!-- SWAP POINT: replace everything inside .win-body with
+           <img src="screenshot.png" alt="…"> and the layout holds. -->
+      <div class="win-body">
+        <div class="transport">
+          <span class="rec"><span class="lamp"></span>Recording</span>
+          <span class="meter">
+            <i style="height:22%"></i><i style="height:48%"></i><i style="height:76%"></i>
+            <i style="height:100%"></i><i style="height:64%"></i><i style="height:38%"></i>
+            <i style="height:55%"></i><i style="height:30%"></i><i style="height:18%"></i>
+          </span>
+          <span class="key">Hold <kbd>Right ⌘</kbd> to dictate · <kbd>⌥⌘Z</kbd> to take it back</span>
+        </div>
+
+        <div class="seg">
+          <span class="on">Transcriptions</span>
+          <span>Meetings</span>
+          <span>Dictionary</span>
+        </div>
+
+        <div class="list">
+          <div class="row">
+            <span class="t">Let's move the release to Thursday — I'd rather ship the cleanup pass with it than after.</span>
+            <span class="m">now · Slack</span>
+            <span class="tags"><span class="tag app">Slack</span><span class="tag fix">2 corrections</span></span>
+          </div>
+          <div class="row">
+            <span class="t">The crash is in <code>HUDPanel.swift</code>, in the presenter — it fires before the panel has a window.</span>
+            <span class="m">2m · Cursor</span>
+            <span class="tags"><span class="tag app">Cursor</span><span class="tag scr">from screen</span></span>
+          </div>
+          <div class="row">
+            <span class="t">Thanks for sending that over. I've read it, and I think the second option is the right one.</span>
+            <span class="m">14m · Mail</span>
+            <span class="tags"><span class="tag app">Mail</span><span class="tag fix">1 correction</span></span>
+          </div>
+          <div class="row">
+            <span class="t">Ship <code>Claude Code</code> first, then the dictionary panel.</span>
+            <span class="m">1h · Notes</span>
+            <span class="tags"><span class="tag app">Notes</span><span class="tag fix">cloud code → Claude Code</span></span>
+          </div>
+        </div>
+      </div>
+    </figure>
+
+    <div class="hud">
+      <span class="wave">
+        <i style="height:30%"></i><i style="height:62%"></i><i style="height:88%"></i>
+        <i style="height:100%"></i><i style="height:74%"></i><i style="height:46%"></i>
+        <i style="height:66%"></i><i style="height:34%"></i><i style="height:20%"></i>
+      </span>
+      <span class="said">let's move the release to Thursday…</span>
+      <span class="lock">🔒</span>
+    </div>
+  </div>
+
+  <div class="wrap credit-bar reveal" style="--i:6">
+    Built on top of <a href="https://github.com/per-simmons/murmur-youtube">per-simmons/murmur-youtube</a> — thank you.
+  </div>
+</header>
+
+<!-- ----------------------------------------------------------------- stats -->
+<section class="tint">
+  <div class="wrap">
+    <div class="stats">
+      <div class="stat reveal"><b>0</b><span>words of your speech sent anywhere</span></div>
+      <div class="stat reveal" style="--i:1"><b>~110×</b><span>realtime on the Neural Engine with Parakeet</span></div>
+      <div class="stat reveal" style="--i:2"><b>3</b><span>keys you can push to talk — Right ⌘, Right ⌥, fn</span></div>
+      <div class="stat reveal" style="--i:3"><b>30 s</b><span>to take the last insert back out again</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ------------------------------------------------------------------- how -->
+<section id="how">
+  <div class="wrap">
+    <div class="narrow center sec-head" style="width:100%">
+      <p class="eyebrow reveal">The gesture</p>
+      <h2 class="reveal" style="--i:1">One key. Two ways to use it.</h2>
+      <p class="lede reveal" style="--i:2">
+        Hold it and it's push-to-talk — recording stops the moment you let go. Or
+        <strong>tap it</strong> and the mic locks open until you tap again, because
+        holding a key down for a long thought is the single thing that stops people
+        dictating anything longer than a sentence.
+      </p>
+    </div>
+
+    <div class="cards">
+      <div class="card reveal">
+        <div class="ico">🎙️</div>
+        <h3>It doesn't steal your cursor</h3>
+        <p>The overlay is a non-activating panel — it cannot become the key window. Your text field keeps focus the whole time, which is the only reason there is somewhere to put the text when you stop talking.</p>
+      </div>
+      <div class="card reveal" style="--i:1">
+        <div class="ico">↩︎</div>
+        <h3><kbd>⌥⌘Z</kbd> takes it back</h3>
+        <p>Dictated the wrong thing into the wrong window? Undo removes it. Bounded to 30 seconds and to the app it went into, because past that nothing can prove the text on screen is still the text we put there.</p>
+      </div>
+      <div class="card reveal" style="--i:2">
+        <div class="ico">🤝</div>
+        <h3>It shares your Mac politely</h3>
+        <p>Built to run alongside another dictation tool. The event tap inspects only its own keycode and passes every other keystroke through untouched — so give each app a different key and neither notices the other.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- -------------------------------------------------------------- features -->
+<section class="tint">
+  <div class="wrap">
+
+    <div class="feature reveal">
+      <div class="feature-text">
+        <p class="eyebrow">Cleanup</p>
+        <h3>It writes down what you meant.</h3>
+        <p>
+          Raw speech-to-text is not usable text. A cleanup pass — Apple's
+          <strong>on-device</strong> language model, or a deterministic rule pass if you'd
+          rather — strips the fillers, restores punctuation and paragraphs, formats spoken
+          lists, and honours mid-sentence corrections like <em>"make that three, actually"</em>.
+        </p>
+        <p>
+          Two guards keep it in the hot path safely. It is <strong>bounded</strong>: past
+          four seconds it falls back to the rule pass, because a stalled model must never
+          cost you an utterance you already spoke. And it is <strong>guarded</strong>:
+          output containing words you didn't say is rejected outright — which is what stops
+          it answering your dictation instead of tidying it.
+        </p>
+      </div>
+      <div class="panel">
+        <div class="panel-head">Cleanup <span class="right">on-device</span></div>
+        <div class="panel-body">
+          <p class="panel-lab">What you said</p>
+          <p class="panel-said">
+            <em>um</em> so we need three <em>uh</em> two servers <em>— make that three, actually —</em>
+            and <em>like</em> the load balancer in front of them <em>you know</em>
+          </p>
+          <span class="arrow-down">↓</span>
+          <p class="panel-out"><b>We need three servers, and the load balancer in front of them.</b></p>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature flip reveal">
+      <div class="feature-text">
+        <p class="eyebrow">Screen context</p>
+        <h3>It can see what you're looking at.</h3>
+        <p>
+          Say "hud panel dot swift" while that file is open and you get
+          <code>HUDPanel.swift</code> — spelled the way it appears on your screen, not the
+          way a general-purpose model guesses at it. Filenames, symbols, bundle IDs,
+          branch names.
+        </p>
+        <p>
+          Three rules keep it from rewriting ordinary speech: a candidate must
+          <strong>look like code</strong> (a camel hump, an underscore, a dot, a path
+          separator), it can <strong>never be a single word</strong>, and a two-word form
+          made entirely of common English is thrown away too.
+        </p>
+        <p>
+          It reuses the Accessibility grant the hotkey already needs — no second
+          permission. The text is matched against one transcript and dropped: never stored,
+          never added to history.
+        </p>
+      </div>
+      <div class="panel">
+        <div class="panel-head">On screen → in the transcript</div>
+        <div class="pair"><span class="heard">"hud panel dot swift"</span><span class="to">→</span><span class="wrote">HUDPanel.swift</span></div>
+        <div class="pair"><span class="heard">"dictation controller"</span><span class="to">→</span><span class="wrote">DictationController</span></div>
+        <div class="pair"><span class="heard">"com dot apple dot mail"</span><span class="to">→</span><span class="wrote">com.apple.mail</span></div>
+        <div class="pair"><span class="heard">"screen vocabulary"</span><span class="to">→</span><span class="wrote">ScreenVocabulary</span></div>
+        <div class="panel-row" style="border-top:1px solid var(--line)"><span class="p">nothing here is written to disk</span></div>
+      </div>
+    </div>
+
+    <div class="feature reveal">
+      <div class="feature-text">
+        <p class="eyebrow">Per-app tone</p>
+        <h3>The same sentence, dressed for where it lands.</h3>
+        <p>
+          A thought wants to be a paragraph in Mail, one lowercase line in Slack, and a
+          bare comment in an editor. <strong>Nothing but the destination app can tell you
+          which</strong>, so Murmur resolves the app at injection time and applies a tone
+          rule for it.
+        </p>
+        <p>
+          The rules are yours to write, with one constraint the app enforces: they must be
+          <strong>subtractive or structural, never additive</strong>. Say how to shape what
+          you said; you cannot ask it to invent something you didn't.
+        </p>
+      </div>
+      <div class="panel">
+        <div class="panel-head">Profiles</div>
+        <div class="panel-row"><span class="p">com.tinyspeck.slackmacgap</span><span class="s">casual, one line</span></div>
+        <div class="panel-row"><span class="p">com.apple.mail</span><span class="s">paragraphs, formal</span></div>
+        <div class="panel-row"><span class="p">com.todesktop.cursor</span><span class="s">terse, no greeting</span></div>
+        <div class="panel-row"><span class="p">com.apple.Notes</span><span class="s">as spoken</span></div>
+        <div class="panel-row"><span class="p" style="color:var(--ink-faint)">everything else</span><span class="s">default</span></div>
+      </div>
+    </div>
+
+    <div class="feature flip reveal">
+      <div class="feature-text">
+        <p class="eyebrow">Dictionary</p>
+        <h3>A text file, not a database.</h3>
+        <p>
+          Names your engine will never get right go in a plain text file you can open in
+          any editor. A bare line is a term to bias toward; <code>X -> Y</code> is a
+          correction applied afterwards, deterministically. The file is
+          <strong>watched</strong>, so editing it updates the app live and vice versa.
+        </p>
+        <p>
+          Biasing the engine is a nudge that promises nothing. Anything that has to be
+          correct is fixed <strong>after</strong> the fact — which is why the corrections
+          are a separate, testable pass, running the same vectors on macOS and on the
+          in-progress Windows build.
+        </p>
+      </div>
+      <div class="panel">
+        <div class="panel-head">~/Library/Application Support/Murmur/dictionary.txt</div>
+        <div class="panel-body" style="padding:0">
+<pre style="margin:0;border-radius:0;box-shadow:none"><code><span class="c"># a bare line is a term to bias toward</span>
+Anthropic
+Vercel
+Parakeet
+
+<span class="c"># X -> Y is a correction, applied after</span>
+cloud code <span class="k">-&gt;</span> Claude Code
+murmur you tube <span class="k">-&gt;</span> murmur-youtube
+
+<span class="c"># off: whisper flow -&gt; Wispr Flow</span></code></pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature reveal">
+      <div class="feature-text">
+        <p class="eyebrow">Meeting mode</p>
+        <h3>Two tracks, so "you" is exact.</h3>
+        <p>
+          A second capture path records your microphone and your Mac's own audio as
+          <strong>two separate tracks</strong>, transcribes both, diarizes the remote one,
+          and produces an attributed transcript with timestamps — out to Markdown, plain
+          text, SRT or WebVTT.
+        </p>
+        <p>
+          Keeping the tracks apart is the whole trick: you are attributed for free and
+          exactly, and the diarizer only has to separate the remote voices from each other
+          — never to pull your own voice out of a mixdown it dominates.
+        </p>
+        <p>
+          The system audio is taken with a <strong>CoreAudio process tap</strong>, not
+          ScreenCaptureKit. The latter is less code and would ask for Screen Recording — a
+          far broader grant than a dictation app has any business holding.
+          <strong>The audio itself is never kept.</strong>
+        </p>
+      </div>
+      <div class="panel">
+        <div class="panel-head">Standup — 24 min <span class="right">4 speakers</span></div>
+        <div class="panel-row"><span class="s" style="margin:0;color:var(--indigo);min-width:3.6rem">You</span><span class="p" style="font-family:var(--sans);font-size:12px">Shipping the cleanup pass Thursday.</span><span class="s" style="color:var(--ink-faint);font-weight:400">00:41</span></div>
+        <div class="panel-row"><span class="s" style="margin:0;min-width:3.6rem">S1</span><span class="p" style="font-family:var(--sans);font-size:12px">Does that include the fallback path?</span><span class="s" style="color:var(--ink-faint);font-weight:400">00:52</span></div>
+        <div class="panel-row"><span class="s" style="margin:0;color:var(--indigo);min-width:3.6rem">You</span><span class="p" style="font-family:var(--sans);font-size:12px">Yes — it times out to the rule pass.</span><span class="s" style="color:var(--ink-faint);font-weight:400">00:58</span></div>
+        <div class="panel-row"><span class="s" style="margin:0;min-width:3.6rem">S2</span><span class="p" style="font-family:var(--sans);font-size:12px">Then I'll pull it into the release notes.</span><span class="s" style="color:var(--ink-faint);font-weight:400">01:10</span></div>
+        <div class="panel-row" style="border-top:1px solid var(--line)"><span class="p">Export as</span><span class="s">Markdown · txt · srt · vtt</span></div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- --------------------------------------------------------------- engines -->
+<section id="engines">
+  <div class="wrap">
+    <div class="narrow center sec-head" style="width:100%">
+      <p class="eyebrow reveal">Speech engines</p>
+      <h2 class="reveal" style="--i:1">Pick the trade you want.</h2>
+      <p class="lede reveal" style="--i:2">
+        Both run on your Mac. They differ in <strong>when the text appears</strong> and in
+        what you have to download to get it — so the choice is a real one, and it is a
+        switch in Settings.
+      </p>
+    </div>
+
+    <div class="tbl-wrap reveal" style="--i:3">
+      <div class="tbl-scroll">
+        <table>
+          <thead>
+            <tr><th>Engine</th><th>Text appears</th><th>To install</th><th>Best at</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="what"><span class="dot i"></span>Apple SpeechTranscriber</td>
+              <td>While you're still talking<span class="sub">Real streaming, with volatile results in the overlay</span></td>
+              <td>Nothing<span class="sub">macOS manages the model; the first run for a language may pause once</span></td>
+              <td>Feeling instant, and many languages<span class="sub">The default</span></td>
+            </tr>
+            <tr>
+              <td class="what"><span class="dot g"></span>Parakeet v3</td>
+              <td>On release, in one pass<span class="sub">~110× realtime — a 30-second thought resolves in about a third of a second</span></td>
+              <td>A ~600 MB model, once<span class="sub">CoreML on the Neural Engine, ~66 MB resident</span></td>
+              <td>English accuracy<span class="sub">25 languages</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <p class="narrow lede reveal" style="width:min(760px,100%);margin-top:34px;font-size:1rem">
+      Adding a third is one protocol conformance. <code>TranscriptionEngine</code> and
+      <code>TextFormatter</code> are the app's two deliberate seams: the components most
+      likely to change can change without anything else moving.
+    </p>
+  </div>
+</section>
+
+<!-- --------------------------------------------------------------- privacy -->
+<section class="tint" id="privacy">
+  <div class="wrap">
+    <div class="narrow center sec-head" style="width:100%">
+      <p class="eyebrow reveal">Permissions</p>
+      <h2 class="reveal" style="--i:1">Two grants, and why each one is unavoidable.</h2>
+      <p class="lede reveal" style="--i:2">
+        A dictation app asking for Accessibility looks alarming until you know what it is
+        for. It is not optional and it cannot be requested silently, so here is the whole
+        of it.
+      </p>
+    </div>
+
+    <div class="tbl-wrap reveal" style="--i:3">
+      <div class="tbl-scroll">
+        <table>
+          <thead>
+            <tr><th>Permission</th><th>What it's for</th><th>What it is not used for</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="what"><span class="dot i"></span>Accessibility</td>
+              <td>Seeing the push-to-talk key, and inserting text<span class="sub">Only a session event tap can see <code>fn</code> and tell Right ⌘ from Left ⌘ — neither the Carbon hotkey API nor a global NSEvent monitor can</span></td>
+              <td>Logging what you type<span class="sub">The tap inspects its own keycode and passes everything else through untouched</span></td>
+            </tr>
+            <tr>
+              <td class="what"><span class="dot i"></span>Microphone</td>
+              <td>Recording while the key is held<span class="sub">Prompted on your first dictation</span></td>
+              <td>Listening otherwise<span class="sub">Capture starts on the key and stops when you release it</span></td>
+            </tr>
+            <tr>
+              <td class="what"><span class="dot g"></span>Screen Recording</td>
+              <td>Never asked for<span class="sub">Meeting mode taps system audio through CoreAudio instead</span></td>
+              <td>—</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="cards">
+      <div class="card reveal">
+        <div class="ico">🔒</div>
+        <h3>Speech never leaves the Mac</h3>
+        <p>Transcription and cleanup both run on-device. There is no account, no server, and nothing to opt out of — the app has no code path that uploads audio or text.</p>
+      </div>
+      <div class="card reveal" style="--i:1">
+        <div class="ico">🗑️</div>
+        <h3>Meeting audio isn't kept</h3>
+        <p>A meeting is minutes of everyone in the room. The transcript is the thing the feature is for, so the recording is discarded once it exists.</p>
+      </div>
+      <div class="card reveal" style="--i:2">
+        <div class="ico">📖</div>
+        <h3>All of it is readable</h3>
+        <p>About 7,000 lines of Swift, MIT-ish and open. The dictionary is a text file in Application Support; history clears with <code>murmur://clear</code>.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- --------------------------------------------------------------- install -->
+<section id="install">
+  <div class="wrap">
+    <div class="narrow center sec-head" style="width:100%">
+      <p class="eyebrow reveal">Getting started</p>
+      <h2 class="reveal" style="--i:1">Four steps, once.</h2>
+    </div>
+
+    <div class="narrow steps" style="width:min(760px,100%)">
+      <div class="step reveal">
+        <div>
+          <h3>Download and drag it in</h3>
+          <p>Move <strong>Murmur</strong> into your Applications folder. Apple silicon, macOS 26 Tahoe or later. There is nothing else to install unless you choose Parakeet later.</p>
+        </div>
+      </div>
+      <div class="step reveal" style="--i:1">
+        <div>
+          <h3>Right-click → Open → Open</h3>
+          <p>The app isn't signed by an identified developer, so a plain double-click is refused the first time.</p>
+        </div>
+      </div>
+      <div class="step reveal" style="--i:2">
+        <div>
+          <h3>Grant Accessibility, then relaunch</h3>
+          <p>System Settings → Privacy &amp; Security → Accessibility → add Murmur. Relaunching matters: the event tap can only be created once the grant exists.</p>
+        </div>
+      </div>
+      <div class="step reveal" style="--i:3">
+        <div>
+          <h3>Hold <kbd>Right ⌘</kbd> and talk</h3>
+          <p>The microphone prompt appears on that first dictation. Prefer a different key, or strict hold-to-talk with no tap-to-lock? Both are in Settings.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="narrow note reveal" style="width:min(760px,100%)">
+      <h3>The honest catch with an unsigned build</h3>
+      <p>
+        macOS ties the Accessibility grant to a <em>code-signing requirement</em>, not to a
+        path. These builds are ad-hoc signed, and an ad-hoc signature is different on every
+        build — so <strong>after installing an update you will have to grant Accessibility
+        again</strong>.
+      </p>
+      <p>
+        The symptom is nastier than it sounds: the toggle still shows as <em>on</em> while
+        the app is reported untrusted, and flipping it changes nothing, because the stale
+        row is the problem. Remove Murmur from the list and add it back — or reset the one
+        row, always with the bundle ID, because a bare <code>tccutil reset Accessibility</code>
+        wipes every app on the machine:
+      </p>
+<pre><code><span class="k">tccutil</span> reset Accessibility ai.pivotstudio.murmur
+<span class="k">tccutil</span> reset Microphone   ai.pivotstudio.murmur</code></pre>
+      <p style="margin-top:14px">
+        Then quit System Settings entirely with <kbd>⌘Q</kbd> before reopening it — that
+        pane caches its list and will otherwise show the row you just deleted. Notarized,
+        Developer ID-signed builds are on the list below, and they end this for good.
+      </p>
+    </div>
+
+    <div class="narrow" style="width:min(760px,100%)">
+      <p class="lede reveal" style="margin-top:54px;font-size:1.05rem">Or build it yourself — Xcode 26 and nothing else:</p>
+<pre class="reveal"><code><span class="k">git</span> clone https://github.com/rohitshidid/murmur.git
+<span class="k">cd</span> murmur
+<span class="k">make</span> install       <span class="c"># builds, bundles, signs, copies to /Applications, launches</span>
+
+<span class="c"># If you have a Developer ID certificate, the Makefile finds it and uses it —</span>
+<span class="c"># and then your Accessibility grant survives every rebuild.</span></code></pre>
+    </div>
+  </div>
+</section>
+
+<!-- ---------------------------------------------------------------- status -->
+<section class="tint">
+  <div class="wrap">
+    <div class="narrow center sec-head" style="width:100%">
+      <p class="eyebrow reveal">Where it's up to</p>
+      <h2 class="reveal" style="--i:1">What isn't built yet.</h2>
+      <p class="lede reveal" style="--i:2">
+        The macOS app is in daily use. These are the things people ask for that
+        <strong>are not there</strong> — listed because finding out after you install is
+        worse than reading it here.
+      </p>
+    </div>
+
+    <ul class="todo narrow" style="width:min(820px,100%)">
+      <li class="reveal"><b>Command Mode</b><span>Select text, hold a second key, say "make this more formal." Needs an Accessibility read of the selection plus a model round-trip.</span></li>
+      <li class="reveal" style="--i:1"><b>File transcription</b><span>Drop in an audio or video file and get a transcript. The engine protocol needs no changes — only a reader that yields chunks from a file instead of the microphone.</span></li>
+      <li class="reveal" style="--i:2"><b>Multilingual</b><span>The language is pinned at launch. Per-utterance choice and auto-detection aren't wired up.</span></li>
+      <li class="reveal" style="--i:3"><b>Onboarding</b><span>There is no first-run window. The permissions are granted from the menu instead.</span></li>
+      <li class="reveal" style="--i:4"><b>Signing &amp; notarization</b><span>What ends the re-granting described above, and the reason the first launch needs a right-click today.</span></li>
+      <li class="reveal" style="--i:5"><b>Windows</b><span>In the repo as a dictionary engine plus a specification — no audio, hotkey, injection or UI yet. Both platforms already run the same correction vectors in CI. It is not a download.</span></li>
+    </ul>
+  </div>
+</section>
+
+<!-- ------------------------------------------------------------- final cta -->
+<section class="final">
+  <div class="wrap">
+    <h2 class="reveal">Stop typing what you could say.</h2>
+    <p class="lede reveal" style="--i:1">Free, open source, and it never sends your voice anywhere.</p>
+    <div class="hero-cta reveal" style="--i:2">
+      <a class="btn btn-lg btn-fill" href="https://github.com/rohitshidid/murmur/releases/latest/download/Murmur-arm64.dmg">
+        Download for macOS
+      </a>
+      <a class="btn btn-lg btn-ghost" href="https://github.com/rohitshidid/murmur">
+        Read the code <span class="arrow">→</span>
+      </a>
+    </div>
+    <p class="hero-note reveal" style="--i:3">Apple silicon · macOS 26 Tahoe or later</p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot">
+    <a href="https://github.com/rohitshidid/murmur">GitHub</a>
+    <a href="https://github.com/rohitshidid/murmur/releases">Releases</a>
+    <a href="https://github.com/rohitshidid/murmur/issues">Report an issue</a>
+    <span class="sep">Made by <a href="https://github.com/rohitshidid">Rohit Shidid</a></span>
+    <p>
+      Murmur is built on top of <a href="https://github.com/per-simmons/murmur-youtube">per-simmons/murmur-youtube</a>,
+      which is where the idea and the first version of this came from — full credit and
+      thanks for it.
+    </p>
+    <p>
+      The download is unsigned and un-notarized. If that isn't acceptable where you work,
+      build it from source: it's a Swift package and a <code>Makefile</code>, and you can
+      read all of it.
+    </p>
+  </div>
+</footer>
+
+<script>
+// Reveal on scroll. One observer for the whole page; each element is unobserved
+// once it has arrived, so nothing keeps recomputing after it has done its job.
+// Elements already on screen at load are handled by the same pass, so nothing
+// above the fold sits invisible.
+(function () {
+  var items = document.querySelectorAll('.reveal');
+  if (!('IntersectionObserver' in window) ||
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    items.forEach(function (el) { el.classList.add('in'); });
+  } else {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (!e.isIntersecting) return;
+        e.target.classList.add('in');
+        io.unobserve(e.target);
+      });
+    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.06 });
+    items.forEach(function (el) { io.observe(el); });
+  }
+
+  // The nav only grows its hairline once the page has moved, so the top of the
+  // page stays a single uninterrupted surface.
+  var nav = document.getElementById('nav');
+  var onScroll = function () { nav.classList.toggle('stuck', window.scrollY > 8); };
+  addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+})();
+
+// The version shown in the hero.
+//
+// Progressive enhancement, deliberately: the download links point at
+// /releases/latest/download/, which GitHub resolves server-side, so the page is
+// always serving the current build whether or not this request succeeds. All
+// this does is *name* the version. If the API is rate-limited, offline, or the
+// repo has no release yet, the static text stays exactly as it is.
+(function () {
+  var el = document.getElementById('ver');
+  if (!el || !window.fetch) return;
+  fetch('https://api.github.com/repos/rohitshidid/murmur/releases/latest', {
+    headers: { Accept: 'application/vnd.github+json' }
+  })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (data) {
+      if (!data || !data.tag_name) return;
+      el.textContent = data.tag_name + ' · Apple silicon';
+    })
+    .catch(function () { /* the static text is already correct enough */ });
+})();
+</script>
+
+</body>
+</html>

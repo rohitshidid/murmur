@@ -1,0 +1,164 @@
+name: Release
+
+# Releases are driven by the version in Resources/Info.plist, not by tags you push.
+#
+# Every push to main is checked: if `v<CFBundleShortVersionString>` has no tag yet, that
+# is a new version, so it gets tested, built, tagged and published. If the tag already
+# exists, nothing happens. Push as often as you like — a website tweak does not cost a
+# full macOS build, and a version bump cannot be forgotten about.
+#
+# The consequence worth knowing: the *tag* is created by this workflow, not locally. That
+# is deliberate — one mechanism, in one place, so a release can never half-happen because
+# a tag went up without a build, or a build ran against a commit nobody tagged.
+#
+# Bumping the version is therefore the whole act of releasing, wherever you do it:
+# `./release.sh`, an editor, or GitHub's web UI.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Rebuild and republish even if the tag already exists'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write        # needed to create the tag, the release and its asset
+
+concurrency:
+  # Two pushes in quick succession must not race to create the same tag.
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Is this a new version?
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.decide.outputs.version }}
+      should_release: ${{ steps.decide.outputs.should_release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # tags are the whole question here
+
+      - id: decide
+        run: |
+          # plistlib rather than PlistBuddy: this job runs on Linux precisely so that the
+          # common case — a push that is not a release — costs seconds on a cheap runner
+          # instead of minutes on a macOS one.
+          VERSION="$(python3 -c "
+          import plistlib
+          with open('Resources/Info.plist','rb') as f:
+              print(plistlib.load(f)['CFBundleShortVersionString'])
+          ")"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+          if [ "${{ inputs.force }}" = "true" ]; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Forced rebuild of v$VERSION."
+          elif git rev-parse "v$VERSION" >/dev/null 2>&1; then
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::v$VERSION is already released. Bump CFBundleShortVersionString in Resources/Info.plist to publish a new one."
+          else
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::v$VERSION has no tag yet — building and publishing it."
+          fi
+
+  release:
+    name: Build and publish the DMG
+    needs: check
+    if: needs.check.outputs.should_release == 'true'
+    # macOS 26, because the app targets it: SpeechAnalyzer and FoundationModels are both
+    # macOS 26 SDK, and Package.swift declares .macOS(.v26). This runner is also Apple
+    # silicon, which the DMG has to be — Parakeet runs on the Neural Engine.
+    runs-on: macos-26
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Package.swift declares swift-tools-version 6.2. Select the newest Xcode present
+      # rather than pinning a version that will age out of the image.
+      - name: Select the newest Xcode
+        run: |
+          latest=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          echo "Using $latest"
+          sudo xcode-select -s "$latest/Contents/Developer"
+
+      - name: Versions
+        run: |
+          swift --version
+          sw_vers
+
+      # The same contract the macOS and Windows workflows enforce. A release that ships a
+      # correction pass the Windows side disagrees with is a release that broke the one
+      # rule this repo has.
+      - name: Test the dictionary contract
+        run: make test
+
+      - name: Build the app and the DMG
+        run: make dmg CONFIG=release BUILD_NUMBER=${{ github.run_number }}
+
+      # `make print-dmg` rather than a hardcoded path: the staging directory lives outside
+      # the checkout (see the Makefile's iCloud note) and only the Makefile knows where.
+      - name: Locate the DMG
+        id: dmg
+        run: |
+          DMG="$(make -s print-dmg)"
+          [ -f "$DMG" ] || { echo "::error::make dmg produced no image at $DMG"; exit 1; }
+          mkdir -p dist
+          cp "$DMG" dist/
+          echo "path=dist/$(basename "$DMG")" >> "$GITHUB_OUTPUT"
+          ls -lh dist/
+
+      # Three things that have each been wrong before and are silent when they are:
+      # an unverifiable signature (the bundle will not launch at all), the wrong
+      # architecture (an x86_64 build looks fine until Parakeet has no Neural Engine to
+      # run on), and a DMG whose app reports a different version from the tag.
+      - name: Verify the bundle
+        run: |
+          APP="$(make -s print-app)"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          file "$APP/Contents/MacOS/Murmur" | tee /dev/stderr | grep -q arm64
+          BUILT="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
+          EXPECTED="${{ needs.check.outputs.version }}"
+          [ "$BUILT" = "$EXPECTED" ] || {
+            echo "::error::the built app says $BUILT but this release is v$EXPECTED"; exit 1;
+          }
+          echo "verified: v$BUILT, arm64, signature checks out"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Murmur-dmg
+          path: ${{ steps.dmg.outputs.path }}
+          if-no-files-found: error
+
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          # The tag is created here, at this commit, by this step.
+          tag_name: v${{ needs.check.outputs.version }}
+          name: Murmur ${{ needs.check.outputs.version }}
+          generate_release_notes: true
+          files: ${{ steps.dmg.outputs.path }}
+          body: |
+            **Apple silicon · macOS 26 Tahoe or later · ad-hoc signed.**
+
+            macOS will refuse the first launch, because the app is not signed by an
+            identified developer. To open it: right-click **Murmur** in Applications →
+            **Open** → **Open**. You only do this once per install.
+
+            Then grant **Accessibility** (System Settings → Privacy & Security →
+            Accessibility) and relaunch. The event tap that sees the push-to-talk key
+            can only be created once that grant exists. The microphone prompt appears on
+            your first dictation.
+
+            **Updating from an earlier version:** an ad-hoc signature differs on every
+            build, and macOS ties the Accessibility grant to the signature — so you will
+            have to grant it again. Remove Murmur from the Accessibility list and add it
+            back; toggling it off and on does not work, because the stale entry is the
+            problem.
+
+            ---

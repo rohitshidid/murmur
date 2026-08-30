@@ -22,6 +22,22 @@ APPNAME  := Murmur.app
 BUNDLE   := $(STAGE)/$(APPNAME)
 CONTENTS := $(BUNDLE)/Contents
 
+## The single source of truth for the version is CFBundleShortVersionString in
+## Resources/Info.plist. `./release.sh` bumps it; the release workflow reads it back and
+## releases whatever has no tag yet. Nothing else stores a version number, because two
+## places storing it is how a DMG ends up named after a version it does not contain.
+VERSION  := $(shell /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Resources/Info.plist)
+
+## CFBundleVersion is the build number, not the marketing version. CI passes the workflow
+## run number; a local build gets 1, which is what the checked-in plist already says.
+BUILD_NUMBER ?= 1
+
+## Deliberately NOT versioned in the filename. The website links to
+## /releases/latest/download/Murmur-arm64.dmg, which only resolves if the asset name is
+## the same in every release. The version lives in the volume name and in the app.
+DMG      := $(STAGE)/Murmur-arm64.dmg
+DMGROOT  := $(STAGE)/dmgroot
+
 ## TCC keys the Accessibility grant to the code signature, so an ad-hoc signature — which
 ## changes on every build — makes the user re-grant after every `make`. Signing with a
 ## stable Developer ID keeps the identity constant and the grant sticky. Falls back to
@@ -32,12 +48,19 @@ ifeq ($(strip $(SIGN_ID)),)
 SIGN_ID := -
 endif
 
-.PHONY: all build app run install clean icon
+.PHONY: all build test app dmg run install clean icon print-dmg print-app
 
 all: app
 
 build:
 	swift build -c $(CONFIG) --scratch-path "$(SCRATCH)"
+
+## The dictionary contract — the same vectors the Windows side runs. Goes through the
+## shared scratch path for the same reason everything else does: a bare `swift test`
+## writes .build into the iCloud-synced tree and reintroduces the mid-compile mutation
+## race this Makefile exists to avoid.
+test:
+	@swift test --filter VectorTests --scratch-path "$(SCRATCH)"
 
 ## Regenerates AppIcon.icns from Tools/makeicon.swift. Not a dependency of `app` — the
 ## icon rarely changes and rendering 10 PNGs on every build is wasted time.
@@ -53,6 +76,9 @@ app: build
 	@mkdir -p "$(CONTENTS)/MacOS" "$(CONTENTS)/Resources"
 	@cp $(BUILD) "$(CONTENTS)/MacOS/$(EXEC)"
 	@cp Resources/Info.plist "$(CONTENTS)/Info.plist"
+	@# The marketing version is already correct in the checked-in plist; only the build
+	@# number is stamped, so a CI build is traceable to the run that produced it.
+	@/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $(BUILD_NUMBER)" "$(CONTENTS)/Info.plist"
 	@if [ -f Resources/AppIcon.icns ]; then cp Resources/AppIcon.icns "$(CONTENTS)/Resources/"; fi
 	@printf 'APPL????' > "$(CONTENTS)/PkgInfo"
 	@# Belt and braces: the staging dir isn't synced, but the copied binary can still carry
@@ -64,6 +90,33 @@ app: build
 		--timestamp=none \
 		"$(BUNDLE)"
 	@echo "built $(BUNDLE)  [signed: $(SIGN_ID)]"
+
+## The distributable. A plain UDZO image containing the .app and a symlink to
+## /Applications, which is the drag-to-install window everyone already knows.
+##
+## Built from $(STAGE), never from this directory — the same iCloud reason as the bundle:
+## hdiutil reads every byte of the source folder, and a file-provider dematerializing one
+## mid-read produces a corrupt image rather than an error.
+dmg: app
+	@rm -rf "$(DMGROOT)" "$(DMG)"
+	@mkdir -p "$(DMGROOT)"
+	@cp -R "$(BUNDLE)" "$(DMGROOT)/$(APPNAME)"
+	@ln -s /Applications "$(DMGROOT)/Applications"
+	@hdiutil create \
+		-volname "Murmur $(VERSION)" \
+		-srcfolder "$(DMGROOT)" \
+		-ov -format UDZO -quiet \
+		"$(DMG)"
+	@rm -rf "$(DMGROOT)"
+	@echo "built $(DMG)  [version: $(VERSION), build: $(BUILD_NUMBER)]"
+
+## So CI never hardcodes the staging path. `make -s print-dmg` and `make -s print-app`
+## are the only places the workflow learns where anything landed.
+print-dmg:
+	@echo "$(DMG)"
+
+print-app:
+	@echo "$(BUNDLE)"
 
 ## `pkill -x $(EXEC)` matches any binary named Murmur, including one belonging to a
 ## different app. That was impossible under the old MurmurYouTube name.

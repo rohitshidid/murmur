@@ -6,6 +6,13 @@ whatever text field has focus. A Wispr Flow-shaped app, built native and fully o
 **Status:** working skeleton. Builds, launches, arms the hotkey, transcribes, injects.
 Branding and the LLM cleanup tier are the next passes.
 
+**[Website](https://rohitshidid.github.io/murmur/)** ·
+**[Download the DMG](https://github.com/rohitshidid/murmur/releases/latest/download/Murmur-arm64.dmg)** ·
+[How releases work](RELEASE.md)
+
+Built on top of [per-simmons/murmur-youtube](https://github.com/per-simmons/murmur-youtube),
+which is where this started — see [Credits](#credits).
+
 ---
 
 ## Coexisting with another dictation app
@@ -30,6 +37,11 @@ the same key both record, and whichever injects text will fight the other.
 ---
 
 ## Quick start
+
+Either take the built one —
+[**Murmur-arm64.dmg**](https://github.com/rohitshidid/murmur/releases/latest/download/Murmur-arm64.dmg),
+Apple silicon, macOS 26+, ad-hoc signed so the first launch needs a right-click → Open —
+or build it:
 
 ```bash
 make install     # builds, bundles, signs, copies to /Applications, launches
@@ -225,3 +237,24 @@ events) and confirmed via `/usr/bin/log show --predicate 'subsystem ==
 can't produce audio, so this needs a human to hold the key and talk.
 
 > `log` is shadowed in this shell — use `/usr/bin/log` explicitly or it returns nothing.
+
+---
+
+## Releasing
+
+Bump `CFBundleShortVersionString` in `Resources/Info.plist` and push. CI does the rest —
+tests, builds the DMG on a clean macOS 26 runner, tags the commit, publishes the release.
+`./release.sh` is the safe front door to that. Full explanation in [RELEASE.md](RELEASE.md).
+
+The website lives in `docs/` and is served by GitHub Pages straight from `main`. Its
+Download buttons point at `/releases/latest/download/Murmur-arm64.dmg`, which GitHub
+resolves server-side — so **the site never needs rebuilding when you release**.
+
+---
+
+## Credits
+
+Murmur is built on top of
+**[per-simmons/murmur-youtube](https://github.com/per-simmons/murmur-youtube)** — that
+project is where the idea and the first working version came from, and this one grew out of
+it. Full credit and thanks.

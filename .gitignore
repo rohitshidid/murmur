@@ -4,6 +4,10 @@
 *.xcuserdatad
 .DS_Store
 
+# Where the release workflow stages the DMG before uploading it. The image itself is
+# built outside this tree (see the Makefile); this is only the copy CI makes.
+dist/
+
 # Windows / .NET build
 [Bb]in/
 [Oo]bj/
