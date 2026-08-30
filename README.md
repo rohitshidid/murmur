@@ -1,14 +1,33 @@
+<div align="center">
+
+<img src="docs/icon.png" alt="" width="132" height="132">
+
 # Murmur
 
-Push-to-talk dictation for macOS. Hold a key, talk, release — cleaned-up text lands in
-whatever text field has focus. A Wispr Flow-shaped app, built native and fully on-device.
+**Hold a key. Talk. Let go.**
+
+Push-to-talk dictation for macOS. Cleaned-up text lands in whatever text field has focus —
+and the overlay that shows what you're saying never takes that focus away.
+A Wispr Flow-shaped app, built native and fully on-device.
+
+[**Website**](https://rohitshidid.github.io/murmur/) &nbsp;·&nbsp;
+[**Download the DMG**](https://github.com/rohitshidid/murmur/releases/latest/download/Murmur-arm64.dmg) &nbsp;·&nbsp;
+[How releases work](RELEASE.md) &nbsp;·&nbsp;
+[Working on this repo](AGENTS.md)
+
+<p>
+<a href="https://github.com/rohitshidid/murmur/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/rohitshidid/murmur?display_name=tag&label=release&color=5B5BD6&style=flat-square"></a>
+<a href="https://github.com/rohitshidid/murmur/actions/workflows/release.yml"><img alt="Release build" src="https://img.shields.io/github/actions/workflow/status/rohitshidid/murmur/release.yml?branch=main&label=build&style=flat-square"></a>
+<a href="https://github.com/rohitshidid/murmur/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/rohitshidid/murmur/total?label=downloads&color=5B5BD6&style=flat-square"></a>
+<img alt="macOS 26+" src="https://img.shields.io/badge/macOS-26%20Tahoe%2B-18181B?style=flat-square&logo=apple&logoColor=white">
+<img alt="Apple silicon" src="https://img.shields.io/badge/arch-Apple%20silicon-18181B?style=flat-square">
+<img alt="Swift 6.2" src="https://img.shields.io/badge/Swift-6.2-F05138?style=flat-square&logo=swift&logoColor=white">
+</p>
+
+</div>
 
 **Status:** working skeleton. Builds, launches, arms the hotkey, transcribes, injects.
 Branding and the LLM cleanup tier are the next passes.
-
-**[Website](https://rohitshidid.github.io/murmur/)** ·
-**[Download the DMG](https://github.com/rohitshidid/murmur/releases/latest/download/Murmur-arm64.dmg)** ·
-[How releases work](RELEASE.md)
 
 Built on top of [per-simmons/murmur-youtube](https://github.com/per-simmons/murmur-youtube),
 which is where this started — see [Credits](#credits).
@@ -258,3 +277,7 @@ Murmur is built on top of
 **[per-simmons/murmur-youtube](https://github.com/per-simmons/murmur-youtube)** — that
 project is where the idea and the first working version came from, and this one grew out of
 it. Full credit and thanks.
+
+**Licence:** none chosen yet, here or upstream, so this is source-available rather than
+open source for the moment. Read it, build it, use it; if you want to redistribute it,
+open an issue and it can be sorted out properly.
