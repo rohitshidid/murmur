@@ -3,17 +3,18 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleName</key>
-	<string>Murmur YouTube</string>
+	<string>Murmur</string>
 	<key>CFBundleDisplayName</key>
-	<string>Murmur YouTube</string>
-	<!-- Deliberately space-free and distinct from the existing app's `murmur`, so that
-	     `pkill`/`killall` on either app can never match the other. -->
+	<string>Murmur</string>
+	<!-- Space-free so `pkill -x Murmur` works. Note this NO LONGER guarantees a miss
+	     against another app also called Murmur — the old `MurmurYouTube` name did, and
+	     the rename gave that up deliberately. See the README. -->
 	<key>CFBundleExecutable</key>
-	<string>MurmurYouTube</string>
-	<!-- Separate from the existing Murmur's com.murmur.client: distinct TCC identity,
-	     distinct preferences domain, no shared state of any kind. -->
+	<string>Murmur</string>
+	<!-- Still distinct from a `com.murmur.client`-style identifier, so TCC grants and
+	     preferences remain this app's own. -->
 	<key>CFBundleIdentifier</key>
-	<string>ai.pivotstudio.murmur-youtube</string>
+	<string>ai.pivotstudio.murmur</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -22,16 +23,15 @@
 	<string>1</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
-	<!-- Lets the dashboard's Clear button call back into the app. A file:// page can't
-	     write files or talk to a process, but it can follow a custom-scheme link. -->
+	<!-- `murmur://clear` empties the history — a scriptable hook. -->
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>ai.pivotstudio.murmur-youtube</string>
+			<string>ai.pivotstudio.murmur</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>murmuryt</string>
+				<string>murmur</string>
 			</array>
 		</dict>
 	</array>
@@ -44,13 +44,13 @@
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Murmur YouTube listens while you hold the push-to-talk key so it can turn your speech into text.</string>
+	<string>Murmur listens while you hold the push-to-talk key so it can turn your speech into text.</string>
 	<!-- Meeting mode taps system audio through CoreAudio so it can transcribe the other
 	     participants. Deliberately not ScreenCaptureKit, which would ask for Screen
 	     Recording — a far broader grant than a dictation app has any business holding. -->
 	<key>NSAudioCaptureUsageDescription</key>
-	<string>Murmur YouTube records the audio your Mac is playing so it can transcribe the other people in a meeting.</string>
+	<string>Murmur records the audio your Mac is playing so it can transcribe the other people in a meeting.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Murmur YouTube transcribes your speech on-device to insert text where you're typing.</string>
+	<string>Murmur transcribes your speech on-device to insert text where you're typing.</string>
 </dict>
 </plist>

@@ -30,7 +30,7 @@ final class SystemAudioCapture: @unchecked Sendable {
             switch self {
             case .tapCreationFailed(let status):
                 return "Couldn't tap system audio (\(status)). Allow audio recording for "
-                    + "Murmur YouTube in System Settings ▸ Privacy & Security."
+                    + "Murmur in System Settings ▸ Privacy & Security."
             case .aggregateCreationFailed(let status):
                 return "Couldn't create the capture device (\(status))."
             case .tapFormatUnavailable:
@@ -100,7 +100,7 @@ final class SystemAudioCapture: @unchecked Sendable {
         // Our own process is excluded so the capture never picks up Murmur's own start and
         // stop ticks — which would otherwise be transcribed as part of the meeting.
         let description = CATapDescription(stereoGlobalTapButExcludeProcesses: Self.ownProcessObjects())
-        description.name = "Murmur YouTube system capture"
+        description.name = "Murmur system capture"
         description.uuid = UUID()
         // Private: the tap belongs to this process and shouldn't appear in other apps'
         // device lists. Unmuted: the user must still hear the meeting they're in.
@@ -141,7 +141,7 @@ final class SystemAudioCapture: @unchecked Sendable {
         let outputUID = Self.defaultOutputDeviceUID() ?? ""
 
         let description: [String: Any] = [
-            kAudioAggregateDeviceNameKey: "Murmur YouTube Capture",
+            kAudioAggregateDeviceNameKey: "Murmur Capture",
             kAudioAggregateDeviceUIDKey: UUID().uuidString,
             // Private so it never appears in Sound settings as a selectable device.
             kAudioAggregateDeviceIsPrivateKey: true,

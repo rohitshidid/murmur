@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The design system for Murmur YouTube.
+/// The design system for Murmur.
 ///
 /// Direction: quiet, modern macOS. Flat surfaces, one hairline border, generous radii, a
 /// single accent, and type doing most of the work. Depth comes from a soft shadow and a

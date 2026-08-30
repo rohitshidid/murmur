@@ -2,13 +2,13 @@ import AppKit
 import SwiftUI
 
 @main
-struct MurmurYouTubeApp: App {
+struct MurmurApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
     var body: some Scene {
         // The main window. A `Window` rather than a `WindowGroup`: this app has one front
         // panel, and letting ⌘N spawn a second copy of a tape deck makes no sense.
-        Window("Murmur YouTube", id: "main") {
+        Window("Murmur", id: "main") {
             MainWindow(controller: delegate.controller)
         }
         .defaultSize(width: 860, height: 620)
@@ -72,13 +72,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 
         observeState()
-        Log.app.info("Murmur YouTube ready — hold \(Settings.shared.pushToTalkKey.displayName) to dictate")
+        Log.app.info("Murmur ready — hold \(Settings.shared.pushToTalkKey.displayName) to dictate")
     }
 
-    /// `murmuryt://clear` empties the history — a scriptable hook, kept because it costs a
+    /// `murmur://clear` empties the history — a scriptable hook, kept because it costs a
     /// dozen lines and is the only way to clear history without the UI.
     func application(_ application: NSApplication, open urls: [URL]) {
-        for url in urls where url.scheme == "murmuryt" && url.host == "clear" {
+        for url in urls where url.scheme == "murmur" && url.host == "clear" {
             RunLog.clear()
             RunStore.shared.reload()
         }
@@ -229,7 +229,7 @@ private struct MenuContent: View {
             Button("Grant Microphone…") { Permissions.openMicrophoneSettings() }
         }
 
-        Button("Quit Murmur YouTube") { NSApp.terminate(nil) }
+        Button("Quit Murmur") { NSApp.terminate(nil) }
             .keyboardShortcut("q")
     }
 }

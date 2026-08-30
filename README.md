@@ -1,4 +1,4 @@
-# Murmur YouTube
+# Murmur
 
 Push-to-talk dictation for macOS. Hold a key, talk, release — cleaned-up text lands in
 whatever text field has focus. A Wispr Flow-shaped app, built native and fully on-device.
@@ -13,11 +13,13 @@ Branding and the LLM cleanup tier are the next passes.
 This app is built to run alongside other dictation tools without colliding with them, which
 is not automatic on macOS and is worth understanding before changing anything:
 
-- **Bundle ID `ai.pivotstudio.murmur-youtube`** — TCC keys Accessibility and Microphone
+- **Bundle ID `ai.pivotstudio.murmur`** — TCC keys Accessibility and Microphone
   grants to the bundle ID, so granting or revoking a permission here has no effect on any
   other app, and vice versa.
-- **Executable `MurmurYouTube`** — distinct enough that `pkill -x MurmurYouTube` cannot
-  match a differently-named binary. The `Makefile` only ever targets `$(EXEC)`.
+- **Executable `Murmur`** — space-free so `pkill -x Murmur` works at all. ⚠️ Unlike the
+  old `MurmurYouTube` name, this is **no longer collision-proof**: if you ever install
+  another app whose binary is also named `Murmur`, `make run` and `make install` will kill
+  it too. That safety was traded away deliberately for the shorter name.
 - **Hotkey is configurable** (Right ⌘ / Right ⌥ / fn) precisely because another tool may
   already own the key you'd reach for first. The event tap inspects only its own keycode
   and passes everything else through untouched.
@@ -40,7 +42,7 @@ Then grant two permissions — neither is optional, and neither can be requested
 | **Accessibility** | System Settings ▸ Privacy & Security ▸ Accessibility | The `CGEventTap` that sees the hotkey, and the AX text insert |
 | **Microphone** | Prompted on first dictation | Audio capture |
 
-Restart Murmur YouTube after granting Accessibility. Then hold **Right ⌘** and talk.
+Restart Murmur after granting Accessibility. Then hold **Right ⌘** and talk.
 
 Two gestures on that key:
 
@@ -68,8 +70,8 @@ grants with no re-prompt.
 If a grant ever does get wedged, reset that one row and re-add — never toggle:
 
 ```bash
-tccutil reset Accessibility ai.pivotstudio.murmur-youtube
-tccutil reset Microphone   ai.pivotstudio.murmur-youtube
+tccutil reset Accessibility ai.pivotstudio.murmur
+tccutil reset Microphone   ai.pivotstudio.murmur
 ```
 
 Always pass the bundle ID. A bare `tccutil reset Accessibility` wipes **every** app on the
@@ -128,8 +130,8 @@ two components most likely to change can change without touching anything else.
 ### Layout
 
 ```
-Sources/MurmurYouTube/
-├── MurmurYouTubeApp.swift              @main, AppDelegate, MenuBarExtra
+Sources/Murmur/
+├── MurmurApp.swift              @main, AppDelegate, MenuBarExtra
 ├── Core/
 │   ├── DictationController.swift   state machine, wires everything
 │   ├── HotkeyMonitor.swift         CGEventTap on .flagsChanged
@@ -207,7 +209,7 @@ what the feature is for.
 
 Driven with a synthetic Right ⌥ hold (`scratchpad/ptt/ptt2.swift` posts `flagsChanged`
 events) and confirmed via `/usr/bin/log show --predicate 'subsystem ==
-"ai.pivotstudio.murmur-youtube"'`:
+"ai.pivotstudio.murmur"'`:
 
 - Builds clean under Swift 6 strict concurrency.
 - Signs with Developer ID; grants survive rebuild + reinstall.

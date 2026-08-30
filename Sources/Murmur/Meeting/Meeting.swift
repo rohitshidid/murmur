@@ -59,7 +59,7 @@ final class MeetingStore {
 
     static var directory: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("MurmurYouTube/Meetings", isDirectory: true)
+            .appendingPathComponent("Murmur/Meetings", isDirectory: true)
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         return base
     }

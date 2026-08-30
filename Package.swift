@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "MurmurYouTube",
+    name: "Murmur",
     platforms: [.macOS(.v26)],
     dependencies: [
         // Parakeet TDT as CoreML on the Neural Engine. Optional at runtime — Apple's
@@ -19,12 +19,12 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .executableTarget(
-            name: "MurmurYouTube",
+            name: "Murmur",
             dependencies: [
                 "MurmurDictionary",
                 .product(name: "FluidAudio", package: "FluidAudio"),
             ],
-            path: "Sources/MurmurYouTube",
+            path: "Sources/Murmur",
             swiftSettings: [
                 .swiftLanguageMode(.v6)
             ]
