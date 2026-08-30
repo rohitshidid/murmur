@@ -123,10 +123,41 @@ private struct MenuContent: View {
     @State private var isPreloadingParakeet = false
     @State private var parakeetOnDisk = ParakeetModels.isDownloaded
 
+    /// Read while the body is evaluated rather than in `onAppear`.
+    ///
+    /// `onAppear` does not reliably fire for `MenuBarExtra` content — SwiftUI turns it into
+    /// `NSMenu` items rather than mounting views — so a list populated there stays empty and
+    /// the picker shows nothing. Computing it here also keeps it fresh: devices come and go
+    /// with cables and Bluetooth, so a list cached at launch is wrong by the time you look.
+    private var inputs: [AudioInputDevice] { AudioDevices.inputs() }
+    private var activeInput: AudioInputDevice? { AudioDevices.active(uid: settings.inputDeviceUID) }
+
     private var parakeetStatus: String {
         if isPreloadingParakeet { return "Loading Parakeet models…" }
         // Reflects what's actually on disk, not just what this menu instance has done.
         return parakeetOnDisk ? "Parakeet models installed ✓" : "Download Parakeet models…"
+    }
+
+    /// The microphone in use, and every other one available.
+    ///
+    /// "System default" is a real choice rather than the absence of one: picking it means
+    /// the app follows whatever you change the system to later.
+    private var microphonePicker: some View {
+        Picker("Microphone", selection: Binding(
+            get: { settings.inputDeviceUID ?? "" },
+            set: { settings.inputDeviceUID = $0.isEmpty ? nil : $0 }
+        )) {
+            Text(systemDefaultTitle).tag("")
+            Divider()
+            ForEach(inputs) { device in
+                Text(device.name).tag(device.uid)
+            }
+        }
+    }
+
+    private var systemDefaultTitle: String {
+        guard let name = AudioDevices.systemDefaultInput()?.name else { return "System default" }
+        return "System default (\(name))"
     }
 
     private func preloadParakeet() {
@@ -146,7 +177,11 @@ private struct MenuContent: View {
     var body: some View {
         Text("Hold \(settings.pushToTalkKey.displayName) to dictate")
 
+        Text(activeInput.map { "Microphone: \($0.name)" } ?? "Microphone: none found")
+
         Divider()
+
+        microphonePicker
 
         Picker("Push-to-talk key", selection: Binding(
             get: { settings.pushToTalkKey },

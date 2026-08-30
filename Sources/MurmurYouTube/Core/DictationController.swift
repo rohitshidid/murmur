@@ -197,6 +197,7 @@ final class DictationController {
 
                 try capture.start(
                     outputFormat: format,
+                    deviceID: AudioDevices.device(uid: Settings.shared.inputDeviceUID)?.id,
                     onBuffer: { chunk in
                         audioContinuation.yield(chunk)
                     },
@@ -240,6 +241,16 @@ final class DictationController {
         level = 0
         releasedAt = Date()
 
+        // Kicked off here, not where its result is used, so the Accessibility walk overlaps
+        // transcription and cleanup instead of adding to the wait. The pid is read on this
+        // actor; the walk itself must not touch AppKit.
+        let screenTask: Task<[(hear: String, write: String)], Never>? = Settings.shared.screenContext
+            ? Task.detached(priority: .userInitiated) { [pid = NSWorkspace.shared.frontmostApplication?.processIdentifier] in
+                guard let pid else { return [] }
+                return ScreenVocabulary.pairs(from: ScreenHarvester.visibleText(pid: pid))
+            }
+            : nil
+
         Task { @MainActor in
             // Drain every captured buffer into the engine before asking it to finalize,
             // or the tail of the utterance gets dropped.
@@ -271,9 +282,24 @@ final class DictationController {
             // The dictionary runs last, and runs regardless of the cleanup setting. Biasing
             // only raises the odds of the right word; this is the pass that guarantees it,
             // so it must not be something the user can accidentally switch off.
-            let (output, corrections) = DictionaryStore.shared.corrector.apply(to: cleaned)
+            var (output, corrections) = DictionaryStore.shared.corrector.apply(to: cleaned)
             if !corrections.isEmpty {
                 Log.speech.info("dictionary · \(corrections.count, privacy: .public) correction(s) applied")
+            }
+
+            // Screen context runs *after* the dictionary, so an explicit rule the user
+            // wrote always beats a guess made from what happened to be on screen.
+            if let screenTask {
+                let pairs = await Self.screenPairs(from: screenTask)
+                if !pairs.isEmpty {
+                    let (screened, hits) = DictionaryCorrector(matching: pairs, reportedAs: .screen)
+                        .apply(to: output)
+                    if !hits.isEmpty {
+                        Log.speech.info("screen · \(hits.count, privacy: .public) match(es) from \(pairs.count, privacy: .public) candidate(s)")
+                    }
+                    output = screened
+                    corrections += hits
+                }
             }
 
             recordRun(text: output, corrections: corrections)
@@ -340,6 +366,54 @@ final class DictationController {
         )
         self.holdStarted = nil
         self.releasedAt = nil
+    }
+
+    /// Awaits the screen harvest, or gives up and abandons it.
+    ///
+    /// Bounded, not merely expected to be fast. The walk measures in tens of milliseconds
+    /// in practice, but it makes synchronous Accessibility calls into another process — and
+    /// an unresponsive app is exactly the case where a "usually quick" call stops being
+    /// quick. Nothing added for accuracy may hold up text the user has already spoken.
+    ///
+    /// Deliberately not a `TaskGroup` with a timeout child: a task group awaits **all** its
+    /// children before returning, so a child that ignores cancellation keeps blocking past
+    /// the deadline and the timeout buys nothing. Racing two continuations and walking away
+    /// is the only shape that actually bounds the wait.
+    private static func screenPairs(
+        from task: Task<[(hear: String, write: String)], Never>
+    ) async -> [(hear: String, write: String)] {
+        let result: [(hear: String, write: String)]? = await withCheckedContinuation { continuation in
+            let gate = ResumeGate(continuation)
+            Task { gate.resume(await task.value) }
+            Task {
+                try? await Task.sleep(for: .milliseconds(400))
+                gate.resume(nil)
+            }
+        }
+
+        if result == nil {
+            task.cancel()
+            Log.speech.info("screen context timed out — skipped")
+        }
+        return result ?? []
+    }
+
+    /// Resumes a continuation exactly once. Resuming twice traps.
+    private final class ResumeGate: @unchecked Sendable {
+        private let lock = NSLock()
+        private var continuation: CheckedContinuation<[(hear: String, write: String)]?, Never>?
+
+        init(_ continuation: CheckedContinuation<[(hear: String, write: String)]?, Never>) {
+            self.continuation = continuation
+        }
+
+        func resume(_ value: [(hear: String, write: String)]?) {
+            lock.lock()
+            let pending = continuation
+            continuation = nil
+            lock.unlock()
+            pending?.resume(returning: value)
+        }
     }
 
     /// Light smoothing so the waveform glides instead of strobing at buffer rate.

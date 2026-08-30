@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreAudio
 import Foundation
 
 /// Microphone capture with on-the-fly conversion to whatever format the speech engine wants.
@@ -26,8 +27,10 @@ final class AudioCapture: @unchecked Sendable {
         if let configObserver { NotificationCenter.default.removeObserver(configObserver) }
     }
 
+    /// - Parameter deviceID: the microphone to record from, or nil for the system default.
     func start(
         outputFormat: AVAudioFormat,
+        deviceID: AudioDeviceID? = nil,
         onBuffer: @escaping @Sendable (AudioChunk) -> Void,
         onLevel: @escaping @Sendable (Float) -> Void
     ) throws {
@@ -38,6 +41,12 @@ final class AudioCapture: @unchecked Sendable {
         self.outputFormat = outputFormat
 
         let input = engine.inputNode
+
+        // Must happen before the format is read: switching devices changes the input's
+        // sample rate and channel count, and a converter built from the previous device's
+        // format would quietly resample from the wrong rate.
+        if let deviceID { setInputDevice(deviceID, on: input) }
+
         let nativeFormat = input.outputFormat(forBus: 0)
 
         converter = nativeFormat == outputFormat
@@ -70,6 +79,27 @@ final class AudioCapture: @unchecked Sendable {
         try engine.start()
         isRunning = true
         Log.audio.info("capture started — native \(nativeFormat.sampleRate)Hz → engine \(outputFormat.sampleRate)Hz")
+    }
+
+    /// Points the engine's input at one device, for this app only.
+    ///
+    /// Deliberately not `kAudioHardwarePropertyDefaultInputDevice` — that would repoint the
+    /// microphone for every app on the machine.
+    private func setInputDevice(_ deviceID: AudioDeviceID, on input: AVAudioInputNode) {
+        guard let unit = input.audioUnit else { return }
+        var id = deviceID
+        let status = AudioUnitSetProperty(
+            unit,
+            kAudioOutputUnitProperty_CurrentDevice,
+            kAudioUnitScope_Global,
+            0,
+            &id,
+            UInt32(MemoryLayout<AudioDeviceID>.size)
+        )
+        if status != noErr {
+            // Not fatal: the engine falls back to the system default, which still records.
+            Log.audio.error("couldn't select input device \(deviceID) — status \(status)")
+        }
     }
 
     func stop() {

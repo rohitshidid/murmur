@@ -80,6 +80,7 @@ final class MeetingRecorder {
 
                 try mic.start(
                     outputFormat: format,
+                    deviceID: AudioDevices.device(uid: Settings.shared.inputDeviceUID)?.id,
                     onBuffer: { [tracks] chunk in tracks.appendMic(chunk.buffer) },
                     onLevel: { [weak self] level in
                         Task { @MainActor in self?.level = level }

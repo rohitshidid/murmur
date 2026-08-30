@@ -34,6 +34,23 @@ final class Settings {
         didSet { defaults.set(latchOnTap, forKey: Keys.latchOnTap) }
     }
 
+    /// Which microphone to record from, by CoreAudio UID. `nil` follows the system default.
+    ///
+    /// Stored as a UID rather than an `AudioDeviceID` because ids are assigned at connect
+    /// time and are reused — persisting one would eventually point at a different device.
+    var inputDeviceUID: String? {
+        didSet { defaults.set(inputDeviceUID, forKey: Keys.inputDeviceUID) }
+    }
+
+    /// Check each transcript against what's visible in the app you're dictating into, so
+    /// filenames and symbols come out spelled the way they appear on screen.
+    ///
+    /// The screen text is read for one transcript and discarded — never written to disk,
+    /// never added to history.
+    var screenContext: Bool {
+        didSet { defaults.set(screenContext, forKey: Keys.screenContext) }
+    }
+
     var engine: SpeechEngineChoice {
         didSet { defaults.set(engine.rawValue, forKey: Keys.engine) }
     }
@@ -59,6 +76,8 @@ final class Settings {
     private enum Keys {
         static let pushToTalkKey = "pushToTalkKey"
         static let latchOnTap = "latchOnTap"
+        static let inputDeviceUID = "inputDeviceUID"
+        static let screenContext = "screenContext"
         static let cleanupEnabled = "cleanupEnabled"
         static let soundEnabled = "soundEnabled"
         static let engine = "engine"
@@ -69,6 +88,8 @@ final class Settings {
         let raw = defaults.string(forKey: Keys.pushToTalkKey) ?? PushToTalkKey.rightCommand.rawValue
         pushToTalkKey = PushToTalkKey(rawValue: raw) ?? .rightCommand
         latchOnTap = defaults.object(forKey: Keys.latchOnTap) as? Bool ?? true
+        inputDeviceUID = defaults.string(forKey: Keys.inputDeviceUID)
+        screenContext = defaults.object(forKey: Keys.screenContext) as? Bool ?? true
         // Apple by default: no download, no dependency, live text while speaking.
         engine = SpeechEngineChoice(rawValue: defaults.string(forKey: Keys.engine) ?? "") ?? .apple
         cleanupEnabled = defaults.object(forKey: Keys.cleanupEnabled) as? Bool ?? true

@@ -11,6 +11,15 @@ public enum CorrectionKind
 
     /// <summary>A spoken trigger expanded into a block of text.</summary>
     Snippet,
+
+    /// <summary>
+    /// A word matched against something visible on screen — a filename, a symbol.
+    /// </summary>
+    /// <remarks>
+    /// Produced by the macOS app's screen-context pass only; the shared correction pass
+    /// never emits it. Present here so the two sides agree on the reporting vocabulary.
+    /// </remarks>
+    Screen,
 }
 
 /// <summary>One correction that actually fired.</summary>
@@ -61,6 +70,9 @@ public sealed class DictionaryCorrector
     private readonly List<Rule> _corrections;
     private readonly List<Rule> _snippets;
 
+    /// <summary>What a correction-rule hit is reported as. Snippet hits report Snippet.</summary>
+    private readonly CorrectionKind _reportedKind;
+
     private sealed record Rule(Regex Regex, string Replacement, string Trigger);
 
     /// <summary>Compiles the enabled entries into two ordered rule sets.</summary>
@@ -70,6 +82,25 @@ public sealed class DictionaryCorrector
         var materialized = entries as IReadOnlyCollection<DictionaryEntry> ?? entries.ToList();
         _corrections = Compile(materialized, EntryKind.Correction);
         _snippets = Compile(materialized, EntryKind.Snippet);
+        _reportedKind = CorrectionKind.Correction;
+    }
+
+    /// <summary>Compiles arbitrary "when you hear X, write Y" pairs that aren't entries.</summary>
+    /// <param name="pairs">Trigger and replacement pairs.</param>
+    /// <param name="reportedAs">The kind recorded on every hit.</param>
+    /// <remarks>
+    /// Mirrors the Swift initializer of the same shape, so screen-context matching reuses
+    /// this machinery rather than reimplementing the fences and ordering that make the
+    /// correction pass safe.
+    /// </remarks>
+    public DictionaryCorrector(
+        IEnumerable<(string Hear, string Write)> pairs,
+        CorrectionKind reportedAs)
+    {
+        var entries = pairs.Select(p => DictionaryEntry.Correction(p.Hear, p.Write)).ToList();
+        _corrections = Compile(entries, EntryKind.Correction);
+        _snippets = [];
+        _reportedKind = reportedAs;
     }
 
     /// <summary>
@@ -118,7 +149,7 @@ public sealed class DictionaryCorrector
 
         foreach (var (rules, kind) in new[]
         {
-            (_corrections, CorrectionKind.Correction),
+            (_corrections, _reportedKind),
             (_snippets, CorrectionKind.Snippet),
         })
         {

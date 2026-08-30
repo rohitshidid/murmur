@@ -80,13 +80,22 @@ struct SettingsWindow: View {
                     }
                     note("Smart cleanup matches the app you're dictating into — longer "
                         + "sentences in Mail, one line in Slack, verbatim in an editor.")
+
+                    Toggle(isOn: $settings.screenContext) {
+                        Silkscreen(text: "Read what's on screen")
+                    }
+                    .toggleStyle(.switch)
+                    note("Checks names against the app you're dictating into, so "
+                        + "\u{201C}hud panel dot swift\u{201D} comes out as HUDPanel.swift. Only "
+                        + "code-shaped names are matched, and the screen text is used for one "
+                        + "transcript and discarded.")
                 }
 
                 Spacer()
             }
             .padding(DS.Space.panel)
         }
-        .frame(width: 520, height: 620)
+        .frame(width: 520, height: 700)
         .sheet(isPresented: $isEditingProfiles) { ProfilesPanel() }
     }
 

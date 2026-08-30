@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The HUD's palette.
@@ -25,13 +26,26 @@ enum Brand {
 struct HUDView: View {
     @Bindable var controller: DictationController
 
-    /// The capsule's dimensions. `HUDPanel` sizes its window to match.
-    static let size = CGSize(width: 268, height: 44)
+    /// The visible capsule.
+    static let capsule = CGSize(width: 248, height: 40)
+
+    /// Clear margin around the capsule, inside the window.
+    ///
+    /// **This is what stops the HUD looking like a rectangle.** A shadow is drawn *inside*
+    /// its window, so when the window is exactly the size of the capsule the shadow is
+    /// clipped square at the window's edge — which reads as a hard grey box around a
+    /// rounded pill. The margin gives the blur somewhere to fall off to nothing.
+    static let margin: CGFloat = 24
+
+    /// The window size `HUDPanel` uses.
+    static var size: CGSize {
+        CGSize(width: capsule.width + margin * 2, height: capsule.height + margin * 2)
+    }
 
     var body: some View {
         HStack(spacing: DS.Space.base) {
             Waveform(level: controller.level, isActive: controller.state == .listening)
-                .frame(width: 52, height: 16)
+                .frame(width: 46, height: 14)
 
             Text(label)
                 .font(.system(size: 12, weight: .medium))
@@ -53,16 +67,22 @@ struct HUDView: View {
         }
         .animation(DS.Motion.panel, value: controller.isLatched)
         .padding(.horizontal, DS.Space.roomy)
-        .frame(width: Self.size.width, height: Self.size.height)
+        .frame(width: Self.capsule.width, height: Self.capsule.height)
         .background {
-            Capsule(style: .continuous)
-                .fill(.regularMaterial)
+            // A real capsule-masked blur rather than SwiftUI's `.regularMaterial`. The
+            // material's backdrop is laid out to the view's bounds, so at this size its
+            // corners stay faintly visible against a busy window behind it; an
+            // NSVisualEffectView takes an explicit mask and has no corners to show.
+            CapsuleBlur()
+                .clipShape(Capsule(style: .continuous))
                 .overlay {
                     Capsule(style: .continuous)
-                        .strokeBorder(.primary.opacity(0.08), lineWidth: 1)
+                        .strokeBorder(.primary.opacity(0.07), lineWidth: 0.5)
                 }
-                .shadow(color: .black.opacity(0.22), radius: 14, y: 5)
+                .shadow(color: .black.opacity(0.18), radius: 12, y: 4)
+                .shadow(color: .black.opacity(0.10), radius: 2, y: 1)
         }
+        .frame(width: Self.size.width, height: Self.size.height)
     }
 
     private var isError: Bool {
@@ -133,5 +153,47 @@ private struct Waveform: View {
         // The wave rides on top of the level so bars still breathe during quiet passages.
         let scaled = amplitude * Self.weights[index] * (0.6 + 0.4 * CGFloat(wave))
         return Self.minHeight + max(0, scaled) * (available - Self.minHeight)
+    }
+}
+
+// MARK: - Blur
+
+/// A background blur masked to a capsule.
+private struct CapsuleBlur: NSViewRepresentable {
+    func makeNSView(context: Context) -> MaskedEffectView {
+        let view = MaskedEffectView()
+        view.material = .hudWindow
+        // Blurs the desktop and windows behind the panel, which is what makes the HUD sit
+        // *in* the screen rather than on top of it. Needs a non-opaque window; `HUDPanel`
+        // is one.
+        view.blendingMode = .behindWindow
+        view.state = .active
+        return view
+    }
+
+    func updateNSView(_ nsView: MaskedEffectView, context: Context) {}
+
+    /// The mask is rebuilt on layout: it's a stretchable image whose caps are half the
+    /// view's height, and that height isn't known when the view is created.
+    final class MaskedEffectView: NSVisualEffectView {
+        override func layout() {
+            super.layout()
+            let radius = bounds.height / 2
+            guard radius > 0 else { return }
+            maskImage = Self.capsuleMask(radius: radius)
+        }
+
+        private static func capsuleMask(radius: CGFloat) -> NSImage {
+            // One pixel of straight edge between the two caps, stretched to any width.
+            let edge = radius * 2 + 1
+            let image = NSImage(size: NSSize(width: edge, height: edge), flipped: false) { rect in
+                NSColor.black.setFill()
+                NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
+                return true
+            }
+            image.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
+            image.resizingMode = .stretch
+            return image
+        }
     }
 }

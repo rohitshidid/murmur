@@ -367,12 +367,18 @@ private struct TranscriptionRow: View {
 private struct CorrectionBadges: View {
     let corrections: [AppliedCorrection]
 
+    /// Named after where the change came from, because "why did that word change?" is the
+    /// only question this row exists to answer.
+    private var label: String {
+        let kinds = Set(corrections.map(\.kind))
+        if kinds == [.screen] { return "From screen" }
+        if kinds == [.snippet] { return "Applied" }
+        return "Corrected"
+    }
+
     var body: some View {
         HStack(spacing: DS.Space.snug) {
-            Silkscreen(
-                text: corrections.contains(where: { $0.kind == .snippet }) ? "Applied" : "Corrected",
-                color: DS.Color.meterAmber
-            )
+            Silkscreen(text: label, color: DS.Color.meterAmber)
             ForEach(corrections, id: \.self) { correction in
                 HStack(spacing: DS.Space.tight) {
                     Text(correction.from)
@@ -393,7 +399,11 @@ private struct CorrectionBadges: View {
                 .padding(.vertical, DS.Space.hair)
                 .overlay(
                     RoundedRectangle(cornerRadius: DS.Radius.chip)
-                        .strokeBorder(DS.Color.meterAmber.opacity(0.35), lineWidth: DS.Border.hairline)
+                        .strokeBorder(
+                            (correction.kind == .screen ? DS.Color.accent : DS.Color.meterAmber)
+                                .opacity(0.35),
+                            lineWidth: DS.Border.hairline
+                        )
                 )
             }
             Spacer()

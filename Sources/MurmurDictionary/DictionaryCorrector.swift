@@ -7,6 +7,9 @@ public struct AppliedCorrection: Codable, Hashable, Sendable {
     public enum Kind: String, Codable, Sendable {
         case correction
         case snippet
+        /// A word matched against something visible on screen — a filename, a symbol.
+        /// Produced by the macOS app only; the shared correction pass never emits it.
+        case screen
     }
 
     /// The text as the engine produced it.
@@ -55,6 +58,8 @@ public struct AppliedCorrection: Codable, Hashable, Sendable {
 public struct DictionaryCorrector: Sendable {
     private let corrections: [Rule]
     private let snippets: [Rule]
+    /// What a correction-rule hit is reported as. Snippet hits always report `.snippet`.
+    private let reportedKind: AppliedCorrection.Kind
 
     private struct Rule: Sendable {
         let regex: NSRegularExpression
@@ -65,6 +70,24 @@ public struct DictionaryCorrector: Sendable {
     public init(entries: [DictionaryEntry]) {
         corrections = Self.compile(entries, kind: .correction)
         snippets = Self.compile(entries, kind: .snippet)
+        reportedKind = .correction
+    }
+
+    /// Compiles arbitrary "when you hear X, write Y" pairs that aren't dictionary entries.
+    ///
+    /// Exists so screen-context matching reuses this machinery rather than reimplementing
+    /// it. Everything that makes the correction pass safe — NFC normalization, whole-match
+    /// fences that can't bite into a longer word, tolerance for glued and hyphenated
+    /// speech, longest-match-first ordering — is exactly what that feature needs, and a
+    /// second copy of it is a second thing to get subtly wrong.
+    ///
+    /// - Parameter reportedAs: the kind recorded on every hit, so history can say where the
+    ///   correction came from.
+    public init(matching pairs: [(hear: String, write: String)], reportedAs kind: AppliedCorrection.Kind) {
+        let entries = pairs.map { DictionaryEntry.correction(hear: $0.hear, write: $0.write) }
+        corrections = Self.compile(entries, kind: .correction)
+        snippets = []
+        reportedKind = kind
     }
 
     /// Longest trigger first. Sorting by the trigger's length is what makes "Claude Code"
@@ -108,7 +131,7 @@ public struct DictionaryCorrector: Sendable {
         var result = text.precomposedStringWithCanonicalMapping
         var applied: [AppliedCorrection] = []
 
-        for (rules, kind) in [(corrections, AppliedCorrection.Kind.correction), (snippets, .snippet)] {
+        for (rules, kind) in [(corrections, reportedKind), (snippets, .snippet)] {
             for rule in rules {
                 let range = NSRange(result.startIndex..., in: result)
                 let matches = rule.regex.numberOfMatches(in: result, range: range)

@@ -25,15 +25,31 @@ final class HUDPanel: NSPanel {
 
         isOpaque = false
         backgroundColor = .clear
+        // The capsule draws its own shadow, with `HUDView.margin` of clear space around it
+        // to fall off into. The window's shadow would be a second one, traced around the
+        // full rectangular frame — exactly the hard square edge this avoids.
         hasShadow = false
 
-        contentView = NSHostingView(rootView: HUDView(controller: controller))
+        let hosting = NSHostingView(rootView: HUDView(controller: controller))
+        // An NSHostingView is layer-backed with an opaque backing colour by default, and
+        // that layer is the rectangle you see behind a rounded panel.
+        hosting.wantsLayer = true
+        hosting.layer?.backgroundColor = .clear
+        hosting.layer?.isOpaque = false
+        contentView = hosting
     }
 
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 
-    /// Parks the panel just above the Dock, horizontally centered on the active screen.
+    /// How much clear space sits between the bottom of the capsule and the top of the Dock.
+    ///
+    /// Measured to the *capsule*, not the window: the window is taller by `HUDView.margin`
+    /// on each side so the shadow has room, and positioning by the frame would leave the
+    /// HUD floating that much higher than intended.
+    private static let gapAboveDock: CGFloat = 18
+
+    /// Parks the panel low on the active screen, horizontally centered.
     ///
     /// `NSScreen.main` is the screen with the *key window* — and an accessory app with a
     /// non-activating panel never has one, so it can be nil. Falling back to `screens.first`
@@ -48,7 +64,7 @@ final class HUDPanel: NSPanel {
         setFrameOrigin(
             NSPoint(
                 x: visible.midX - size.width / 2,
-                y: visible.minY + 96
+                y: visible.minY + Self.gapAboveDock - HUDView.margin
             )
         )
     }
