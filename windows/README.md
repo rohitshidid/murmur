@@ -30,6 +30,18 @@ What *is* genuinely shared is the dictionary's behaviour, and it is shared as a 
 rather than as code: [`shared/dictionary-test-vectors.json`](../shared/dictionary-test-vectors.json).
 Both implementations run those vectors in CI. Changing correction semantics starts there.
 
+There is now a **second contract** in the same shape:
+[`shared/formatting-test-vectors.json`](../shared/formatting-test-vectors.json), specifying the
+text structure pass — spoken retraction (including the alignment that repairs a value in
+place rather than erasing the sentence around it), spoken commands, list inference, email
+greetings and sign-offs, caret continuation, and the guard around the optional grammar-repair
+model pass. The macOS side implements it in `Sources/MurmurFormatting`, which is deliberately
+platform-neutral: pure Foundation, no AppKit, no Speech. **The C# port does not exist yet**
+— the vectors are there so that when it is written there is something to write it against,
+the same way the dictionary was.
+
+The regex subset constraint applies to it identically, and for the same reason.
+
 ---
 
 ## Decisions, and why

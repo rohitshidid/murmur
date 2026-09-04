@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Murmur — hold a key, talk, let go</title>
-<meta name="description" content="Push-to-talk dictation for macOS that runs entirely on your Mac. Hold a key, talk, release — cleaned-up text lands in whatever field has focus, and the overlay never steals it.">
+<meta name="description" content="Push-to-talk dictation for macOS that runs entirely on your Mac. Hold a key, talk, release — cleaned-up text lands in whatever field has focus. Spoken lists and commands, say &quot;no wait&quot; to take something back, email greetings and sign-offs laid out for you, and an overlay that never steals focus.">
 <link rel="icon" href="icon.png">
 <meta property="og:title" content="Murmur — push-to-talk dictation for macOS">
-<meta property="og:description" content="Hold a key, talk, let go. On-device speech, an on-device cleanup pass, and an overlay that never takes focus. Free, and the source is there to read.">
+<meta property="og:description" content="Hold a key, talk, let go. On-device speech and cleanup, spoken lists and structure, retraction that repairs rather than erases, and an overlay that never takes focus. Free, and the source is there to read.">
 <meta property="og:image" content="icon.png">
 <meta property="og:type" content="website">
 <style>
@@ -425,6 +425,7 @@ footer { padding: 54px 0 72px; border-top: 1px solid var(--line); background: va
     <span class="nav-name">Murmur</span>
     <div class="nav-links">
       <a href="#how" class="opt">How it works</a>
+      <a href="#features" class="opt">Features</a>
       <a href="#engines" class="opt">Engines</a>
       <a href="#privacy" class="opt">Privacy</a>
       <a href="#install" class="opt">Install</a>
@@ -568,7 +569,7 @@ footer { padding: 54px 0 72px; border-top: 1px solid var(--line); background: va
 </section>
 
 <!-- -------------------------------------------------------------- features -->
-<section class="tint">
+<section class="tint" id="features">
   <div class="wrap">
 
     <div class="feature reveal">
@@ -600,6 +601,77 @@ footer { padding: 54px 0 72px; border-top: 1px solid var(--line); background: va
           <span class="arrow-down">↓</span>
           <p class="panel-out"><b>We need three servers, and the load balancer in front of them.</b></p>
         </div>
+      </div>
+    </div>
+
+    <div class="feature flip reveal">
+      <div class="feature-text">
+        <p class="eyebrow">Structure</p>
+        <h3>It types the shape you spoke.</h3>
+        <p>
+          Say <em>"new paragraph"</em>, <em>"bullet point"</em>, <em>"number one"</em>,
+          <em>"all caps urgent"</em> — and get the thing, not the words. Read a list out
+          loud and it comes out as a list: <strong>"first, buy milk. second, call the
+          bank"</strong> lands numbered, in whatever marker style that app uses.
+        </p>
+        <p>
+          Inference is deliberately hard to trigger. A cue only counts at the start of a
+          clause, the sequence has to open at one and climb, and there have to be at least
+          two items — so <em>"the first thing I noticed"</em> stays a sentence. All three
+          rules exist to stop ordinary speech turning into bullet points.
+        </p>
+        <p>
+          None of this needs a model. It is rules, so it costs nothing, it is the same
+          every time, and it <strong>works with cleanup switched off</strong> — which
+          matters, because the on-device model is opt-in and needs hardware not every Mac
+          has.
+        </p>
+      </div>
+      <div class="panel">
+        <div class="panel-head">Spoken → typed</div>
+        <div class="panel-body">
+          <p class="panel-lab">What you said</p>
+          <p class="panel-said">
+            I need three things. First, buy milk. Second, call the bank. Third, book the flight.
+          </p>
+          <span class="arrow-down">↓</span>
+          <p class="panel-out"><b>I need three things:<br>1. Buy milk<br>2. Call the bank<br>3. Book the flight</b></p>
+        </div>
+        <div class="panel-row" style="border-top:1px solid var(--line)"><span class="p">56 vectors pin this behaviour</span><span class="s">rules, not a model</span></div>
+      </div>
+    </div>
+
+    <div class="feature reveal">
+      <div class="feature-text">
+        <p class="eyebrow">Retraction</p>
+        <h3>Say "no wait" and mean it.</h3>
+        <p>
+          <em>"I'll send the report next week. Actually no, scratch that. I'll send it
+          today."</em> types only the last sentence. The retraction, and the thought it
+          rejected, never reach your document.
+        </p>
+        <p>
+          The interesting half is smaller repairs. <em>"I want to meet you at 4, no wait at
+          3"</em> should not cost you the first half of the sentence — so before falling
+          back to erasing a whole clause, it looks for <strong>what the replacement is
+          replacing</strong>. A repeated word says where the repair starts; failing that,
+          the <em>kind</em> of word does, so one weekday swaps for another and the words
+          around it survive.
+        </p>
+        <p>
+          Phrases are distinctive on purpose — a bare "sorry" is not one of them, because
+          <em>"sorry, I didn't mean to bother you"</em> is a sentence people write. And
+          whatever a retraction erased is kept in History: it was never typed, so there is
+          nothing to undo, and that log is the only copy.
+        </p>
+      </div>
+      <div class="panel">
+        <div class="panel-head">Heard → typed</div>
+        <div class="pair"><span class="heard">"…at 4, no wait at 3"</span><span class="to">→</span><span class="wrote">…at 3</span></div>
+        <div class="pair"><span class="heard">"Tuesday, no wait Wednesday"</span><span class="to">→</span><span class="wrote">Wednesday</span></div>
+        <div class="pair"><span class="heard">"3 things, no wait 4"</span><span class="to">→</span><span class="wrote">4 things</span></div>
+        <div class="pair"><span class="heard">"scratch all that"</span><span class="to">→</span><span class="wrote">starts over</span></div>
+        <div class="panel-row" style="border-top:1px solid var(--line)"><span class="p">what it erased stays in History</span></div>
       </div>
     </div>
 
@@ -637,6 +709,41 @@ footer { padding: 54px 0 72px; border-top: 1px solid var(--line); background: va
 
     <div class="feature reveal">
       <div class="feature-text">
+        <p class="eyebrow">Field context</p>
+        <h3>Which field, not just which app.</h3>
+        <p>
+          Mail's <em>To</em> line, its <em>Subject</em> line and its body are one bundle ID
+          and three completely different registers. And a browser is <strong>one bundle ID
+          standing in for a hundred destinations</strong> — which is why Gmail, where most
+          people actually write email, used to look exactly like a search engine.
+        </p>
+        <p>
+          So the focused element's role and label are read, along with the page's host. A
+          search box stops getting a full stop it never wanted. A subject line stops being
+          written as a paragraph. And in an email body, <em>"hi sarah I wanted to check"</em>
+          gets its own line while <em>"thanks rohit"</em> becomes a signature block —
+          punctuation and line breaks over words you actually said, nothing invented.
+        </p>
+        <p>
+          It also reads the text in front of the cursor, which is what makes dictation
+          <strong>join on</strong> instead of colliding: speak into a half-finished sentence
+          and there is no stray capital, speak under <code>2. Call the bank</code> and you
+          get item three. Nobody speaks a five-item list in one breath.
+        </p>
+      </div>
+      <div class="panel">
+        <div class="panel-head">Same app, different register</div>
+        <div class="panel-row"><span class="p">Mail · To</span><span class="s">an address</span></div>
+        <div class="panel-row"><span class="p">Mail · Subject</span><span class="s">a fragment, no full stop</span></div>
+        <div class="panel-row"><span class="p">Mail · body</span><span class="s">paragraphs, greeting, sign-off</span></div>
+        <div class="panel-row"><span class="p">Chrome · mail.google.com</span><span class="s">an email, not a web page</span></div>
+        <div class="panel-row"><span class="p">Chrome · address bar</span><span class="s">verbatim</span></div>
+        <div class="panel-row" style="border-top:1px solid var(--line)"><span class="p">one element, read once, never stored</span></div>
+      </div>
+    </div>
+
+    <div class="feature flip reveal">
+      <div class="feature-text">
         <p class="eyebrow">Per-app tone</p>
         <h3>The same sentence, dressed for where it lands.</h3>
         <p>
@@ -658,6 +765,45 @@ footer { padding: 54px 0 72px; border-top: 1px solid var(--line); background: va
         <div class="panel-row"><span class="p">com.todesktop.cursor</span><span class="s">terse, no greeting</span></div>
         <div class="panel-row"><span class="p">com.apple.Notes</span><span class="s">as spoken</span></div>
         <div class="panel-row"><span class="p" style="color:var(--ink-faint)">everything else</span><span class="s">default</span></div>
+      </div>
+    </div>
+
+    <div class="feature reveal">
+      <div class="feature-text">
+        <p class="eyebrow">Grammar repair</p>
+        <h3>Optional, because it may change your words.</h3>
+        <p>
+          Everything else here is subtractive or structural. This one is not: with the
+          toggle on, the on-device model may fix agreement, tense, word order and the
+          sentences you abandoned halfway — <em>"me and him goes to the store"</em> becomes
+          <em>"He and I went to the store."</em> That is a real edit, so it is
+          <strong>off until you turn it on</strong>.
+        </p>
+        <p>
+          It cannot use the cleanup guard, which rejects any word you didn't say — that
+          guard would reject every successful repair. So it has its own, asking the opposite
+          question: <strong>what has to survive?</strong> Every digit in order, every name,
+          weekday and month, and every URL, address, file path and code identifier,
+          verbatim. If any of them moved, the output is thrown away and the plain cleanup is
+          used instead.
+        </p>
+        <p>
+          That is the check that stops <em>"send it Tuesday"</em> quietly becoming
+          Wednesday — the kind of failure you would never catch by reading it back. It
+          repairs how a sentence is built; it does not touch what you claimed.
+        </p>
+      </div>
+      <div class="panel">
+        <div class="panel-head">Repair <span class="right">on-device</span></div>
+        <div class="panel-body">
+          <p class="panel-lab">What you said</p>
+          <p class="panel-said">me and him goes to the store yesterday and we buys milk</p>
+          <span class="arrow-down">↓</span>
+          <p class="panel-out"><b>He and I went to the store yesterday, and we bought milk.</b></p>
+        </div>
+        <div class="panel-row" style="border-top:1px solid var(--line)"><span class="p">"ship it at 3pm" → "at 4pm"</span><span class="s" style="color:var(--record)">rejected</span></div>
+        <div class="panel-row"><span class="p">"on Tuesday" → "on Wednesday"</span><span class="s" style="color:var(--record)">rejected</span></div>
+        <div class="panel-row"><span class="p">invents a name you didn't say</span><span class="s" style="color:var(--record)">rejected</span></div>
       </div>
     </div>
 
@@ -925,7 +1071,7 @@ murmur you tube <span class="k">-&gt;</span> murmur-youtube
       <li class="reveal" style="--i:2"><b>Multilingual</b><span>The language is pinned at launch. Per-utterance choice and auto-detection aren't wired up.</span></li>
       <li class="reveal" style="--i:3"><b>Onboarding</b><span>There is no first-run window. The permissions are granted from the menu instead.</span></li>
       <li class="reveal" style="--i:4"><b>Signing &amp; notarization</b><span>What ends the re-granting described above, and the reason the first launch needs a right-click today.</span></li>
-      <li class="reveal" style="--i:5"><b>Windows</b><span>In the repo as a dictionary engine plus a specification — no audio, hotkey, injection or UI yet. Both platforms already run the same correction vectors in CI. It is not a download.</span></li>
+      <li class="reveal" style="--i:5"><b>Windows</b><span>In the repo as a dictionary engine plus a specification — no audio, hotkey, injection or UI yet. The behaviour it has to match is already written down: both the correction vectors and the structure vectors live in the repo and run in CI. It is not a download.</span></li>
     </ul>
   </div>
 </section>

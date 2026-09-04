@@ -319,8 +319,15 @@ events) and confirmed via `/usr/bin/log show --predicate 'subsystem ==
 - HUD renders bottom-center at `{{790, 96}, {340, 76}}` without taking focus.
 - Silence produces an empty transcript and injects nothing.
 
+The structure pass is verified differently, and better: it is a pure function of its input,
+so `shared/formatting-test-vectors.json` pins all 56 cases — retraction and its alignment,
+spoken commands, list inference, email shape, caret continuation, terminal punctuation, and
+the polish guard's accept/reject decisions. CI runs them alongside the dictionary's.
+
 **Not yet verified:** speech → transcript → cleanup → injection. Synthetic key events
-can't produce audio, so this needs a human to hold the key and talk.
+can't produce audio, so this needs a human to hold the key and talk. The Accessibility reads
+in `FieldHarvester` are in the same category — telling Mail's subject line from its body
+needs a real Mail window.
 
 > `log` is shadowed in this shell — use `/usr/bin/log` explicitly or it returns nothing.
 

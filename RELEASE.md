@@ -121,6 +121,11 @@ make icon
 cp Resources/AppIcon.iconset/icon_512x512.png docs/icon.png
 ```
 
+The features section is hand-written and does not read from the app, so **a feature that
+ships without a block there is a feature nobody finds.** It is the one part of the site that
+goes stale silently — the version in the hero fixes itself, the download link resolves
+server-side, and this doesn't.
+
 The page's colour tokens are the app's own, lifted from
 `Sources/Murmur/UI/DesignSystem.swift` and `Tools/makeicon.swift`. Change the accent in one
 and change it in the other.
