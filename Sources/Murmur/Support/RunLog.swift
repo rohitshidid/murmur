@@ -26,6 +26,15 @@ struct DictationRun: Codable, Sendable, Identifiable {
     /// decode with this nil rather than failing the whole line.
     var corrections: [AppliedCorrection]?
 
+    /// Text a spoken retraction erased before injection.
+    ///
+    /// Kept because this is the one thing the app removes that the user cannot get back:
+    /// it was never typed, so `TextInjector.undoLast` has nothing to undo. If "scratch
+    /// that" ever fires on an ordinary sentence, this is where the sentence went.
+    ///
+    /// Optional for the same reason `corrections` is — older runs predate it.
+    var retracted: [String]?
+
     var realtimeFactor: Double { audioSeconds / max(processSeconds, 0.0001) }
     var characters: Int { text.count }
 
@@ -36,7 +45,8 @@ struct DictationRun: Codable, Sendable, Identifiable {
         audioSeconds: Double,
         processSeconds: Double,
         text: String,
-        corrections: [AppliedCorrection]? = nil
+        corrections: [AppliedCorrection]? = nil,
+        retracted: [String]? = nil
     ) {
         self.id = id
         self.date = date
@@ -45,6 +55,7 @@ struct DictationRun: Codable, Sendable, Identifiable {
         self.processSeconds = processSeconds
         self.text = text
         self.corrections = corrections
+        self.retracted = retracted
     }
 
     init(from decoder: any Decoder) throws {
@@ -56,6 +67,7 @@ struct DictationRun: Codable, Sendable, Identifiable {
         processSeconds = try container.decode(Double.self, forKey: .processSeconds)
         text = try container.decode(String.self, forKey: .text)
         corrections = try container.decodeIfPresent([AppliedCorrection].self, forKey: .corrections)
+        retracted = try container.decodeIfPresent([String].self, forKey: .retracted)
     }
 }
 

@@ -18,10 +18,20 @@ let package = Package(
             path: "Sources/MurmurDictionary",
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
+        // Text structure — retraction, spoken commands, lists, email shape, and the guard
+        // for the grammar-repair pass. Platform-neutral for the same reason the dictionary
+        // is: the behaviour is a contract, the vectors in shared/ are the contract, and a
+        // pass that can only be exercised by talking into a Mac is a pass nothing checks.
+        .target(
+            name: "MurmurFormatting",
+            path: "Sources/MurmurFormatting",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
         .executableTarget(
             name: "Murmur",
             dependencies: [
                 "MurmurDictionary",
+                "MurmurFormatting",
                 .product(name: "FluidAudio", package: "FluidAudio"),
             ],
             path: "Sources/Murmur",
@@ -34,6 +44,13 @@ let package = Package(
             dependencies: ["MurmurDictionary"],
             path: "Tests/MurmurDictionaryTests",
             resources: [.copy("dictionary-test-vectors.json")],
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .testTarget(
+            name: "MurmurFormattingTests",
+            dependencies: ["MurmurFormatting"],
+            path: "Tests/MurmurFormattingTests",
+            resources: [.copy("formatting-test-vectors.json")],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
     ]

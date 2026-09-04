@@ -26,24 +26,32 @@ working.
 
 ## The one rule that matters
 
-**`shared/dictionary-test-vectors.json` is the specification for correction behaviour.**
+**The two files in `shared/` are the specification, not a record of what the code does.**
 
-Both implementations run it in CI. If you change how corrections work, change the vectors
+| File | Specifies | Implemented in |
+|---|---|---|
+| `dictionary-test-vectors.json` | correction and snippet behaviour | `MurmurDictionary` |
+| `formatting-test-vectors.json` | retraction, spoken commands, lists, email shape, caret continuation, and the polish guard | `MurmurFormatting` |
+
+Both implementations run them in CI. If you change how any of it works, change the vectors
 first, watch both sides go red, then make them green. Changing one implementation to "fix"
 a failing vector without changing the other is how the two silently diverge — and only one
 of them can be exercised by hand.
 
 ```bash
-swift test --filter VectorTests           # macOS side
+make test                                 # macOS side; copies the vectors, then runs both suites
 cd windows && dotnet test Murmur.sln      # Windows side
 ```
 
-The Swift copy at `Tests/MurmurDictionaryTests/dictionary-test-vectors.json` is a copy, and
-CI fails if it drifts from `shared/`. After editing the shared file:
+The copies under `Tests/` are copies, and CI fails if either drifts from `shared/`. `make
+test` copies them for you; `make vectors` does it alone.
 
-```bash
-cp shared/dictionary-test-vectors.json Tests/MurmurDictionaryTests/
-```
+**There is no Xcode on a machine with only Command Line Tools**, and swift-testing's
+`Testing` module ships with Xcode — so `swift test` fails to compile with "no such module
+'Testing'" and always has, for the dictionary suite too. That is an environment gap, not a
+broken test. To exercise `MurmurFormatting` without Xcode, compile it with a throwaway
+`main.swift` that decodes the vectors and calls `StructurePass` directly; the module is pure
+Foundation and links in about a second.
 
 ---
 
@@ -71,6 +79,26 @@ down once already.
 **Mutating `@State` inside a `Canvas` draw closure floods the log and corrupts state.** The
 VU meter keeps its needle physics in a plain reference type the view merely holds, which is
 invisible to SwiftUI's state graph. Don't "clean that up" into `@State`.
+
+**`isPlausibleCleanup` strips list markers before it compares words.** It has to. That guard
+rejects any output containing a word absent from the input, and it counts digits as words —
+so "first, buy milk, second, call the bank" cleaned into `1. Buy milk` / `2. Call the bank`
+reads as two invented words. Without the strip, the pass whose own prompt asks for formatted
+lists rejects every list it produces, silently, and falls back to the rule-based pass.
+
+**The polish pass has its own guard and must keep it.** `PolishGuard`, not
+`isPlausibleCleanup`. Repair is allowed to change words — "me and him goes" becomes "he and I
+went" — so the cleanup guard rejects every successful repair. `PolishGuard` inverts the
+question: it checks what must *survive* (every digit in order, every name, every URL, path
+and identifier verbatim, and a length band).
+
+**`ListMarkerStyle` is not called `ListStyle`.** SwiftUI has a protocol of that name, and any
+view file that imports `MurmurFormatting` fails with "ambiguous for type lookup". Renaming it
+back costs an hour.
+
+**`FieldHarvester` refuses to read its own process, like `ScreenHarvester`.** Same trap, same
+crash: Accessibility against this process builds the tree synchronously on the calling
+thread, evaluating SwiftUI bodies off the main actor. Reachable from the Record button.
 
 ---
 
@@ -159,7 +187,45 @@ warnings on a cached build, so without it the gate proves nothing.
 
 ---
 
-## Regex, if you touch the dictionary
+## The structure pass
+
+`MurmurFormatting` runs in two halves, on either side of cleanup, and the split is
+load-bearing:
+
+- **`preClean`** — retraction and spoken commands, on the raw transcript. These need the
+  words exactly as spoken; a cleanup model asked to tidy "scratch that" tidies it into prose.
+- **`structure`** — lists, email shape, terminal punctuation and the join onto text already
+  in the field, on the cleaned transcript. These need the punctuation and capitalization that
+  cleanup produces.
+
+Move a rule across that line and it stops working, quietly.
+
+Three deliberate absences, each of which looks like an oversight:
+
+- **Retraction alignment is capped at four words, and the cap is the whole rule.** A repair
+  swaps a phrase ("at 4, no wait at 3"); a restatement replaces a clause ("we should ship the
+  beta, no wait, the beta is not ready"). Both repeat a word, and only the length separates
+  them — align on the second one and you get "ship the beta is not ready". Raise the cap and
+  that is the failure you get back.
+- **Retraction still has no bare "I meant".** Alignment makes it usable rather than
+  destructive, but "I meant" is ordinary English in a way "scratch that" is not, and the
+  cleanup model already applies spoken self-corrections when it runs.
+- **Alignment never crosses a sentence boundary, in either direction.** That one constraint
+  is what keeps it from colliding with the filler back-off: a retraction that is a sentence
+  of its own ("Actually no, scratch that.") has nothing in its own sentence to align against,
+  so it falls through to scope — which is the right answer for it. Widen the search and the
+  two mechanisms start fighting over the same utterance.
+- **No bare "comma", "period" or "dash" commands.** They are ordinary English. A dictation
+  tool that cannot type the word "dash" is worse than one that needs "em dash".
+- **List inference requires a cue at a clause boundary, a sequence starting at one, and two
+  items.** All three exist to stop "the first thing I noticed" becoming a list. Relax any of
+  them and ordinary sentences start turning into lists.
+
+Everything here is deterministic and runs whether or not the on-device model is available.
+That is the point: `smartCleanup` is off by default and needs hardware not every Mac has, so
+a feature built only on top of it doesn't exist for most users.
+
+## Regex, if you touch the dictionary or the structure pass
 
 The two engines are not identical. Measured across 30 cases, **9 diverged**. Two affect this
 code and are handled — don't remove either:

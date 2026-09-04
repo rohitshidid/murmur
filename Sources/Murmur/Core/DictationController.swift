@@ -1,4 +1,5 @@
 import MurmurDictionary
+import MurmurFormatting
 import AVFoundation
 import AppKit
 import Foundation
@@ -241,13 +242,24 @@ final class DictationController {
         level = 0
         releasedAt = Date()
 
-        // Kicked off here, not where its result is used, so the Accessibility walk overlaps
-        // transcription and cleanup instead of adding to the wait. The pid is read on this
-        // actor; the walk itself must not touch AppKit.
+        // Both Accessibility reads are kicked off here, not where their results are used, so
+        // they overlap transcription and cleanup instead of adding to the wait. The pid is
+        // read on this actor; neither read may touch AppKit.
+        let frontmost = NSWorkspace.shared.frontmostApplication
+        let pid = frontmost?.processIdentifier
+        let bundleID = frontmost?.bundleIdentifier
+
         let screenTask: Task<[(hear: String, write: String)], Never>? = Settings.shared.screenContext
-            ? Task.detached(priority: .userInitiated) { [pid = NSWorkspace.shared.frontmostApplication?.processIdentifier] in
+            ? Task.detached(priority: .userInitiated) {
                 guard let pid else { return [] }
                 return ScreenVocabulary.pairs(from: ScreenHarvester.visibleText(pid: pid))
+            }
+            : nil
+
+        let fieldTask: Task<FieldSnapshot, Never>? = Settings.shared.fieldContext
+            ? Task.detached(priority: .userInitiated) {
+                guard let pid else { return .unknown }
+                return FieldHarvester.snapshot(pid: pid, bundleID: bundleID)
             }
             : nil
 
@@ -274,15 +286,37 @@ final class DictationController {
 
             // Resolved here rather than when the key went down: this is the moment before
             // injection, so the app it reads is the app the text is actually going into.
-            let context = FormatContext.current()
+            let field = await fieldTask?.value ?? .unknown
+            let context = FormatContext.current(field: field)
+            let options = context.structureOptions
+
+            // The structure pass runs in two halves around cleanup. Retraction and spoken
+            // commands need the words exactly as spoken — a cleanup model tidies "scratch
+            // that" into prose — while lists and email shape need the final punctuation and
+            // capitalization that cleanup produces.
+            let pre = StructurePass.preClean(raw, options: options)
+            if pre.didRetract {
+                Log.speech.info("retraction · \(pre.retracted.count, privacy: .public) span(s) taken back")
+            }
+
+            // An utterance of nothing but commands — a stray "new paragraph" — reduces to an
+            // empty string, and injecting that means an empty pasteboard paste into the
+            // user's document.
+            guard !pre.text.isEmpty else {
+                state = .idle
+                transcript = ""
+                return
+            }
+
             let cleaned = Settings.shared.cleanupEnabled
-                ? await activeFormatter.format(raw, context: context)
-                : raw
+                ? await activeFormatter.format(pre.text, context: context)
+                : pre.text
+            let structured = StructurePass.structure(cleaned, options: options)
 
             // The dictionary runs last, and runs regardless of the cleanup setting. Biasing
             // only raises the odds of the right word; this is the pass that guarantees it,
             // so it must not be something the user can accidentally switch off.
-            var (output, corrections) = DictionaryStore.shared.corrector.apply(to: cleaned)
+            var (output, corrections) = DictionaryStore.shared.corrector.apply(to: structured)
             if !corrections.isEmpty {
                 Log.speech.info("dictionary · \(corrections.count, privacy: .public) correction(s) applied")
             }
@@ -302,7 +336,7 @@ final class DictationController {
                 }
             }
 
-            recordRun(text: output, corrections: corrections)
+            recordRun(text: output, corrections: corrections, retracted: pre.retracted)
             TextInjector.insert(output)
             if Settings.shared.soundEnabled { NSSound(named: "Pop")?.play() }
 
@@ -352,7 +386,16 @@ final class DictationController {
     /// `processSeconds` is measured from key release, not from capture start — that's the
     /// wait the user actually experiences, and it's the only number on which a streaming
     /// engine and a batch engine can be compared honestly.
-    private func recordRun(text: String, corrections: [AppliedCorrection] = []) {
+    /// - Parameter retracted: spans a retraction erased.
+    ///
+    ///   Recorded because a retraction that fires on ordinary speech costs the speaker words
+    ///   they cannot get back by any other means — the text was never injected, so there is
+    ///   nothing to undo. The run log is the only place they still exist.
+    private func recordRun(
+        text: String,
+        corrections: [AppliedCorrection] = [],
+        retracted: [String] = []
+    ) {
         guard let holdStarted, let releasedAt else { return }
         RunLog.record(
             DictationRun(
@@ -361,7 +404,8 @@ final class DictationController {
                 audioSeconds: releasedAt.timeIntervalSince(holdStarted),
                 processSeconds: Date().timeIntervalSince(releasedAt),
                 text: text,
-                corrections: corrections.isEmpty ? nil : corrections
+                corrections: corrections.isEmpty ? nil : corrections,
+                retracted: retracted.isEmpty ? nil : retracted
             )
         )
         self.holdStarted = nil

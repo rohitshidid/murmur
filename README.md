@@ -130,7 +130,13 @@ Other targets: `make app` (bundle only), `make run` (run in place), `make clean`
                                             │
                                        (transcript)
                                             ▼
-                                      TextFormatter
+                                   StructurePass.preClean   ◄── FieldHarvester
+                                            ▼               ◄── (which field, what's
+                                      TextFormatter              before the caret)
+                                            ▼
+                                   StructurePass.structure
+                                            ▼
+                                     DictionaryCorrector
                                             ▼
                                       TextInjector ─► focused app
 ```
@@ -158,6 +164,23 @@ because `AudioCapture` always allocates fresh storage before handing off.
 **Two swappable seams.** `TranscriptionEngine` and `TextFormatter` are protocols so the
 two components most likely to change can change without touching anything else.
 
+**Structure is rules, not a model.** Retraction, spoken commands, lists and email shape live
+in `MurmurFormatting` as pure functions over strings, and they run whether or not smart
+cleanup is on. Smart cleanup needs macOS 26 with Apple Intelligence and is off by default —
+a feature built only on top of it wouldn't exist for most people. The model improves the
+result; it isn't required for one.
+
+**The structure pass runs in two halves, around cleanup.** Retraction and spoken commands
+need the words exactly as spoken, because a cleanup model tidies "scratch that" into prose.
+Lists and email shape need the punctuation and capitalisation cleanup produces. Neither half
+works on the other's side of the line.
+
+**Which field, not just which app.** Mail's To line, its Subject line and its body are one
+bundle ID and three different registers, and a browser is one bundle ID standing in for
+Gmail, Linear and everything else. `FieldHarvester` reads the focused element's role and
+label plus the page host, so a search box doesn't get a full stop and a Gmail compose window
+is treated as email.
+
 ### Layout
 
 ```
@@ -167,17 +190,30 @@ Sources/Murmur/
 │   ├── DictationController.swift   state machine, wires everything
 │   ├── HotkeyMonitor.swift         CGEventTap on .flagsChanged
 │   ├── AudioCapture.swift          AVAudioEngine tap + format conversion + RMS
+│   ├── FieldHarvester.swift        which field, and what's before the caret
 │   └── TextInjector.swift          AX insert, pasteboard+⌘V fallback
 ├── Transcription/
 │   ├── TranscriptionEngine.swift   protocol + AudioChunk
 │   └── AppleSpeechEngine.swift     SpeechAnalyzer / SpeechTranscriber
 ├── Formatting/
-│   └── TextFormatter.swift         protocol + RuleBasedFormatter
+│   ├── TextFormatter.swift         protocol + RuleBasedFormatter
+│   ├── FoundationModelFormatter.swift  on-device cleanup, and grammar repair
+│   ├── AppProfile.swift            per-app tone, list style and polish
+│   └── AppFamily.swift             bundle and web-host families
 ├── UI/
 │   ├── HUDPanel.swift              non-activating floating panel
 │   └── HUDView.swift               waveform + live transcript, Brand palette
 └── Support/
     ├── Settings.swift, Permissions.swift, Log.swift
+
+Sources/MurmurFormatting/          platform-neutral, spec'd by shared/ vectors
+├── StructurePass.swift             the two halves, in order
+├── Retraction.swift                "scratch that"
+├── SpokenCommands.swift            "new paragraph", "bullet point", "all caps"
+├── ListStructure.swift             recognising a list read out loud
+├── SignOff.swift                   email greetings and signature blocks
+├── CaretContinuation.swift         joining onto what's already in the field
+└── PolishGuard.swift               what grammar repair may never change
 ```
 
 ---
@@ -203,6 +239,37 @@ change.
 | Latency | low | ~80 ms | 200–500 ms |
 
 ---
+
+## Writing, not just transcribing
+
+**Spoken structure.** "New paragraph", "bullet point", "next item", "number one", "all caps
+urgent". Rules, so they cost nothing and work with cleanup switched off.
+
+**Lists you read out.** "First, buy milk. Second, call the bank" becomes a numbered list —
+and only when a cue sits at a clause boundary, the sequence starts at one, and there are at
+least two items, so "the first thing I noticed" stays a sentence. Each app chooses its
+marker.
+
+**Taking it back.** "I'll send it next week. Actually no, scratch that. I'll send it today."
+types only the last sentence. And when only a value changed, only the value changes: "I want
+to meet you at 4, no wait at 3" types "I want to meet you at 3", because the repeated "at"
+says where the repair begins. Where nothing repeats, the kind of word carries it — "send it
+Tuesday, no wait Wednesday" swaps one weekday for the other. Whatever a retraction erased is
+kept in History, because it was never injected and so there is nothing to undo.
+
+**Email shape.** In an email body, "hi sarah I wanted to check" gets its own line and "thanks
+rohit" becomes a signature block. Punctuation and line breaks over words that were spoken —
+nothing is invented, except optionally your own name on a bare closing.
+
+**Continuing what's already there.** Speak into a half-finished sentence and it joins on
+without a stray capital; speak under `2. Call the bank` and you get item three.
+
+**Grammar repair (optional).** With the toggle on, the on-device model may fix agreement,
+tense and half-finished sentences rather than only tidying them. It is guarded on what must
+survive: every digit in order, every name, every URL, path and identifier verbatim. If any of
+them moved, the result is thrown away and the plain cleanup is used instead. Once on, it
+applies in every app until you switch it off for one in **Tone by app** — including code
+editors, because that is also where commit messages and release notes get written.
 
 ## Beyond dictation
 

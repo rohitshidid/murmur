@@ -1,4 +1,5 @@
 import AppKit
+import MurmurFormatting
 import SwiftUI
 
 /// Per-app tone rules: what the cleanup pass is told about where the text is going.
@@ -87,11 +88,7 @@ struct ProfilesPanel: View {
 
             TextEditor(text: Binding(
                 get: { selected.instruction },
-                set: { store.save(AppProfile(
-                    bundleID: selected.bundleID,
-                    name: selected.name,
-                    instruction: $0
-                )) }
+                set: { store.save(edited(instruction: $0)) }
             ))
             .textEditorStyle(.plain)
             .font(DS.Font.body)
@@ -115,6 +112,41 @@ struct ProfilesPanel: View {
                 .foregroundStyle(DS.Color.inkSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 
+            Divider().overlay(DS.Color.seam)
+
+            Silkscreen(text: "Spoken lists")
+            HStack(spacing: DS.Space.snug) {
+                ForEach(ListMarkerStyle.allCases, id: \.self) { style in
+                    TransportKey(
+                        title: style.displayName,
+                        isEngaged: selected.listStyle == style,
+                        engagedColor: DS.Color.ink
+                    ) {
+                        store.save(edited(listStyle: style))
+                    }
+                    .background {
+                        if selected.listStyle == style {
+                            RoundedRectangle(cornerRadius: DS.Radius.control).fill(DS.Color.selection)
+                        }
+                    }
+                }
+            }
+
+            Toggle(isOn: Binding(
+                get: { selected.polish },
+                set: { store.save(edited(polish: $0)) }
+            )) {
+                Silkscreen(text: "Repair grammar here")
+            }
+            .toggleStyle(.switch)
+            Text("On everywhere by default \u{2014} including code editors and terminals, "
+                + "where commit messages get written too. Turn it off anywhere being "
+                + "rewritten is unwelcome. Only has an effect while Repair grammar is on "
+                + "in Settings.")
+                .font(DS.Font.caption)
+                .foregroundStyle(DS.Color.inkSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
             if store.isOverridden(selected.bundleID) {
                 Button { store.reset(selected.bundleID) } label: {
                     Silkscreen(text: "Reset to built-in", color: DS.Color.inkSecondary)
@@ -123,6 +155,25 @@ struct ProfilesPanel: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// One field changed, everything else carried over.
+    ///
+    /// Every control here writes a whole profile, so without this each of them would have to
+    /// spell out the other three — and adding a fourth field would silently reset it from
+    /// whichever control was edited last.
+    private func edited(
+        instruction: String? = nil,
+        listStyle: ListMarkerStyle? = nil,
+        polish: Bool? = nil
+    ) -> AppProfile {
+        AppProfile(
+            bundleID: selected.bundleID,
+            name: selected.name,
+            instruction: instruction ?? selected.instruction,
+            listStyle: listStyle ?? selected.listStyle,
+            polish: polish ?? selected.polish
+        )
     }
 
     /// Picks an app by file rather than asking for a bundle identifier, which nobody knows

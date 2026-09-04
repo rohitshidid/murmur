@@ -1,4 +1,5 @@
 import Foundation
+import MurmurFormatting
 
 /// The cleanup pass between raw transcription and injection.
 ///
@@ -30,12 +31,12 @@ struct RuleBasedFormatter: TextFormatter {
     private static let fillers = ["um", "uh", "erm", "uhm", "hmm", "mhm"]
 
     /// Spoken punctuation people actually use mid-dictation.
-    private static let spokenPunctuation: [(String, String)] = [
-        ("new paragraph", "\n\n"),
-        ("new line", "\n"),
-        ("open paren", " ("),
-        ("close paren", ") "),
-    ]
+    ///
+    /// The same four `SpokenCommands` handles, and deliberately only those four. The wider
+    /// command set runs before this pass, so by the time text arrives here they have already
+    /// been applied; these stay for the standalone case, where `RuleBasedFormatter` is used
+    /// on its own with no structure pass in front of it.
+    private static let spokenPunctuation = SpokenCommands.legacyPunctuation
 
     func format(_ raw: String, context: FormatContext) async -> String {
         var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -1,0 +1,403 @@
+{
+  "$comment": [
+    "Shared behavioural contract for the text structure pass.",
+    "",
+    "Sibling to dictionary-test-vectors.json and read the same way: this file is the",
+    "specification, not a record of what the code happens to do. The macOS app runs it in",
+    "Swift; the Windows app is expected to run the identical file in C# once its platform",
+    "layer exists. Change behaviour here first, watch the implementations go red, then make",
+    "them green.",
+    "",
+    "The pass runs in two halves, because they need the text at different moments:",
+    "",
+    "  preClean  - retraction and spoken commands, on the raw transcript, before any",
+    "              cleanup. These rules must see the words exactly as they were said.",
+    "  structure - lists, email shape, terminal punctuation and the join onto text already",
+    "              in the field, on the cleaned transcript, immediately before injection.",
+    "",
+    "Each case names the phase it exercises. `options` overrides the defaults below; any",
+    "key left out takes the default.",
+    "",
+    "  field: unknown, listStyle: numbered, retractionScope: sentence, commandsEnabled: true,",
+    "  listsEnabled: true, retractionEnabled: true, signOffEnabled: true, autoSignOff: true,",
+    "  userNames: [], extraRetractionPhrases: [], textBeforeCaret: \"\"",
+    "",
+    "polishGuardCases are separate: they check the guard around the optional grammar-repair",
+    "model pass, which is allowed to change words and therefore cannot use the cleanup",
+    "guard. `accepted` is what the guard must return for that pair."
+  ],
+  "version": 1,
+  "cases": [
+    {
+      "name": "retraction takes back the sentence it followed",
+      "phase": "preClean",
+      "input": "I'll send the report next week. Actually no, scratch that. I'll send it today.",
+      "expected": "I'll send it today."
+    },
+    {
+      "name": "a retraction in its own sentence reaches back past itself",
+      "phase": "preClean",
+      "input": "Let's go with the blue one. Scratch that. Let's go with the green one.",
+      "expected": "Let's go with the green one."
+    },
+    {
+      "name": "a wide retraction discards everything before it",
+      "phase": "preClean",
+      "input": "Tell them we can do it on Monday, scratch all that, tell them we need another week.",
+      "expected": "tell them we need another week."
+    },
+    {
+      "name": "a retraction with nothing after it is content, not a command",
+      "phase": "preClean",
+      "input": "I checked the numbers again and that's wrong.",
+      "expected": "I checked the numbers again and that's wrong."
+    },
+    {
+      "name": "a repeated word says where the repair starts",
+      "phase": "preClean",
+      "input": "I want to meet you at 4, no wait at 3.",
+      "expected": "I want to meet you at 3."
+    },
+    {
+      "name": "alignment keeps the rest of the sentence",
+      "phase": "preClean",
+      "input": "Let's meet at three, no wait, at four.",
+      "expected": "Let's meet at four."
+    },
+    {
+      "name": "a bare number swaps the number it replaces",
+      "phase": "preClean",
+      "input": "I need 3 things, no wait 4.",
+      "expected": "I need 4 things."
+    },
+    {
+      "name": "a weekday swaps a weekday",
+      "phase": "preClean",
+      "input": "Send it Tuesday, no wait Wednesday.",
+      "expected": "Send it Wednesday."
+    },
+    {
+      "name": "alignment survives a repeated verb",
+      "phase": "preClean",
+      "options": { "retractionScope": "clause" },
+      "input": "I'll call the client, then I'll email the team, no wait, I'll email them first.",
+      "expected": "I'll call the client, then I'll email them first."
+    },
+    {
+      "name": "a whole clause is a restatement, not a repair",
+      "phase": "preClean",
+      "input": "We should ship the beta, no wait, the beta is not ready yet.",
+      "expected": "the beta is not ready yet."
+    },
+    {
+      "name": "clause scope stops at the previous clause when nothing aligns",
+      "phase": "preClean",
+      "options": { "retractionScope": "clause" },
+      "input": "I'll call the client, then I'll email the team, no wait, let's just cancel it.",
+      "expected": "I'll call the client, let's just cancel it."
+    },
+    {
+      "name": "retraction can be switched off",
+      "phase": "preClean",
+      "options": { "retractionEnabled": false },
+      "input": "Let's go with the blue one. Scratch that. Let's go with the green one.",
+      "expected": "Let's go with the blue one. Scratch that. Let's go with the green one."
+    },
+    {
+      "name": "an ordinary apology is not a retraction",
+      "phase": "preClean",
+      "input": "Sorry for the delay, I was travelling all week.",
+      "expected": "Sorry for the delay, I was travelling all week."
+    },
+    {
+      "name": "new paragraph and new line are structure, not words",
+      "phase": "preClean",
+      "input": "the draft is ready new paragraph let me know what you think",
+      "expected": "the draft is ready\n\nlet me know what you think"
+    },
+    {
+      "name": "bullet point starts an item",
+      "phase": "preClean",
+      "input": "here is the plan bullet point ship the beta bullet point collect feedback",
+      "expected": "here is the plan\n• ship the beta\n• collect feedback"
+    },
+    {
+      "name": "spoken numbers number themselves",
+      "phase": "preClean",
+      "input": "number one buy milk number two call the bank",
+      "expected": "1. buy milk\n2. call the bank"
+    },
+    {
+      "name": "next item follows the destination's list style",
+      "phase": "preClean",
+      "options": { "listStyle": "bullet" },
+      "input": "the agenda next item budget next item hiring",
+      "expected": "the agenda\n• budget\n• hiring"
+    },
+    {
+      "name": "a continued list keeps counting from the caret",
+      "phase": "preClean",
+      "options": { "textBeforeCaret": "1. Buy milk\n2. Call the bank\n" },
+      "input": "next item book the flight",
+      "expected": "3. book the flight"
+    },
+    {
+      "name": "all caps and cap that",
+      "phase": "preClean",
+      "input": "this is all caps urgent and murmur cap that ships today",
+      "expected": "this is URGENT and Murmur ships today"
+    },
+    {
+      "name": "line breaks collapse in a single-line field",
+      "phase": "preClean",
+      "options": { "field": "searchField" },
+      "input": "swift concurrency new line docs",
+      "expected": "swift concurrency docs"
+    },
+    {
+      "name": "commands can be switched off",
+      "phase": "preClean",
+      "options": { "commandsEnabled": false },
+      "input": "the draft is ready new paragraph let me know",
+      "expected": "the draft is ready new paragraph let me know"
+    },
+    {
+      "name": "spoken ordinals become a numbered list",
+      "phase": "structure",
+      "options": { "field": "longText" },
+      "input": "I need three things. First, buy milk. Second, call the bank. Third, book the flight.",
+      "expected": "I need three things:\n1. Buy milk\n2. Call the bank\n3. Book the flight"
+    },
+    {
+      "name": "list style follows the destination",
+      "phase": "structure",
+      "options": { "field": "longText", "listStyle": "bullet" },
+      "input": "I need three things. First, buy milk. Second, call the bank. Third, book the flight.",
+      "expected": "I need three things:\n• Buy milk\n• Call the bank\n• Book the flight"
+    },
+    {
+      "name": "an ordinal doing ordinary work is not a list",
+      "phase": "structure",
+      "options": { "field": "longText" },
+      "input": "The first thing I noticed was the colour.",
+      "expected": "The first thing I noticed was the colour."
+    },
+    {
+      "name": "one item is not a list",
+      "phase": "structure",
+      "options": { "field": "longText" },
+      "input": "First I need coffee.",
+      "expected": "First I need coffee."
+    },
+    {
+      "name": "a list out of order is not a list",
+      "phase": "structure",
+      "options": { "field": "longText" },
+      "input": "Second guessing this whole thing. Third parties are involved.",
+      "expected": "Second guessing this whole thing. Third parties are involved."
+    },
+    {
+      "name": "no lists in a code editor",
+      "phase": "structure",
+      "options": { "field": "code" },
+      "input": "First, buy milk. Second, call the bank",
+      "expected": "First, buy milk. Second, call the bank"
+    },
+    {
+      "name": "nothing is joined onto the caret in a terminal",
+      "phase": "structure",
+      "options": { "field": "terminal", "textBeforeCaret": "git commit -m" },
+      "input": "Fix the leak",
+      "expected": "Fix the leak"
+    },
+    {
+      "name": "no full stop appended in a code editor",
+      "phase": "structure",
+      "options": { "field": "code" },
+      "input": "let total = items.count.",
+      "expected": "let total = items.count"
+    },
+    {
+      "name": "lists can be switched off",
+      "phase": "structure",
+      "options": { "field": "longText", "listsEnabled": false },
+      "input": "First, buy milk. Second, call the bank.",
+      "expected": "First, buy milk. Second, call the bank."
+    },
+    {
+      "name": "a list continues the numbering above the caret",
+      "phase": "structure",
+      "options": { "field": "longText", "textBeforeCaret": "1. Buy milk\n2. Call the bank\n" },
+      "input": "First, book the flight. Second, pack.",
+      "expected": "3. Book the flight\n4. Pack"
+    },
+    {
+      "name": "closing and name become a signature block",
+      "phase": "structure",
+      "options": { "field": "emailBody", "userNames": ["Rohit"] },
+      "input": "I'll have it over by Friday. Thanks Rohit",
+      "expected": "I'll have it over by Friday.\n\nThanks,\nRohit"
+    },
+    {
+      "name": "the configured spelling of the name wins",
+      "phase": "structure",
+      "options": { "field": "emailBody", "userNames": ["Rohit Shidid", "Rohit"] },
+      "input": "Let me know if that works. Best regards rohit shidid",
+      "expected": "Let me know if that works.\n\nBest regards,\nRohit Shidid"
+    },
+    {
+      "name": "a bare closing signs itself when auto sign-off is on",
+      "phase": "structure",
+      "options": { "field": "emailBody", "userNames": ["Rohit"] },
+      "input": "Let me know. Thanks.",
+      "expected": "Let me know.\n\nThanks,\nRohit"
+    },
+    {
+      "name": "auto sign-off off leaves a bare closing alone",
+      "phase": "structure",
+      "options": { "field": "emailBody", "userNames": ["Rohit"], "autoSignOff": false },
+      "input": "Let me know. Thanks.",
+      "expected": "Let me know. Thanks."
+    },
+    {
+      "name": "no configured name means no signature",
+      "phase": "structure",
+      "options": { "field": "emailBody" },
+      "input": "Let me know. Thanks.",
+      "expected": "Let me know. Thanks."
+    },
+    {
+      "name": "a greeting becomes its own line",
+      "phase": "structure",
+      "options": { "field": "emailBody" },
+      "input": "Hi Sarah I wanted to check on the invoice.",
+      "expected": "Hi Sarah,\n\nI wanted to check on the invoice."
+    },
+    {
+      "name": "a greeting with no name does not invent one",
+      "phase": "structure",
+      "options": { "field": "emailBody" },
+      "input": "Hi I wanted to check on the invoice.",
+      "expected": "Hi,\n\nI wanted to check on the invoice."
+    },
+    {
+      "name": "a greeting halfway down an email is a word",
+      "phase": "structure",
+      "options": { "field": "emailBody", "textBeforeCaret": "Thanks for sending that over. " },
+      "input": "Hi Sarah mentioned the invoice.",
+      "expected": "Hi Sarah mentioned the invoice."
+    },
+    {
+      "name": "email shape does not apply outside an email body",
+      "phase": "structure",
+      "options": { "field": "longText", "userNames": ["Rohit"] },
+      "input": "I'll have it over by Friday. Thanks Rohit",
+      "expected": "I'll have it over by Friday. Thanks Rohit"
+    },
+    {
+      "name": "a continued sentence is not capitalised",
+      "phase": "structure",
+      "options": { "field": "longText", "textBeforeCaret": "I went to the store" },
+      "input": "And bought milk.",
+      "expected": " and bought milk."
+    },
+    {
+      "name": "a finished sentence keeps its capital",
+      "phase": "structure",
+      "options": { "field": "longText", "textBeforeCaret": "I went to the store." },
+      "input": "And bought milk.",
+      "expected": " And bought milk."
+    },
+    {
+      "name": "a name after a continuation is not lowercased",
+      "phase": "structure",
+      "options": { "field": "longText", "textBeforeCaret": "I spoke to" },
+      "input": "Sarah about it.",
+      "expected": " Sarah about it."
+    },
+    {
+      "name": "an acronym after a continuation is left alone",
+      "phase": "structure",
+      "options": { "field": "longText", "textBeforeCaret": "the deploy runs on" },
+      "input": "AWS every night.",
+      "expected": " AWS every night."
+    },
+    {
+      "name": "no full stop in a search field",
+      "phase": "structure",
+      "options": { "field": "searchField" },
+      "input": "Swift concurrency.",
+      "expected": "Swift concurrency"
+    },
+    {
+      "name": "no full stop on a subject line",
+      "phase": "structure",
+      "options": { "field": "emailSubject" },
+      "input": "Invoice for August.",
+      "expected": "Invoice for August"
+    },
+    {
+      "name": "a question mark survives a field that wants no full stop",
+      "phase": "structure",
+      "options": { "field": "emailSubject" },
+      "input": "Are we still on for Friday?",
+      "expected": "Are we still on for Friday?"
+    }
+  ],
+  "polishGuardCases": [
+    {
+      "name": "ordinary grammar repair is allowed",
+      "original": "me and him goes to the store yesterday and we buys milk",
+      "polished": "He and I went to the store yesterday and we bought milk.",
+      "accepted": true
+    },
+    {
+      "name": "a changed number is rejected",
+      "original": "let's ship it at 3 pm and send 250 invites",
+      "polished": "Let's ship it at 3 pm and send 350 invites.",
+      "accepted": false
+    },
+    {
+      "name": "reformatting a time is allowed",
+      "original": "the call is at 8 30 tomorrow",
+      "polished": "The call is at 8:30 tomorrow.",
+      "accepted": true
+    },
+    {
+      "name": "a changed weekday is rejected",
+      "original": "let's ship on Tuesday",
+      "polished": "Let's ship on Wednesday.",
+      "accepted": false
+    },
+    {
+      "name": "an invented name is rejected",
+      "original": "can you review the doc before the standup",
+      "polished": "Can you review the doc before the standup, Sarah?",
+      "accepted": false
+    },
+    {
+      "name": "a changed URL is rejected",
+      "original": "the docs are at example.com/guide and I linked them",
+      "polished": "The docs are at example.com/guides, and I linked them.",
+      "accepted": false
+    },
+    {
+      "name": "a changed identifier is rejected",
+      "original": "the bug is in HUDPanel and it only happens on launch",
+      "polished": "The bug is in HUDPanels, and it only happens on launch.",
+      "accepted": false
+    },
+    {
+      "name": "a summary is rejected",
+      "original": "so the thing I wanted to say is that the deploy went out this morning and everything looks fine on the dashboards and nobody has reported anything",
+      "polished": "The deploy is fine.",
+      "accepted": false
+    },
+    {
+      "name": "the model explaining itself is rejected",
+      "original": "me and him goes to the store",
+      "polished": "Here's the corrected sentence: He and I went to the store.",
+      "accepted": false
+    }
+  ]
+}

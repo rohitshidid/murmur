@@ -1,4 +1,6 @@
+import AppKit
 import Foundation
+import MurmurFormatting
 import Observation
 
 /// Which speech engine transcribes an utterance.
@@ -71,6 +73,77 @@ final class Settings {
         didSet { defaults.set(soundEnabled, forKey: Keys.soundEnabled) }
     }
 
+    // MARK: - Structure
+
+    /// Read which field the text is going into, and what is already in front of the caret.
+    ///
+    /// Separate from `screenContext`, which reads the whole window looking for vocabulary.
+    /// This is one element and a handful of attributes, and turning it off costs the
+    /// difference between knowing you're in Mail and knowing you're in Mail's subject line.
+    var fieldContext: Bool {
+        didSet { defaults.set(fieldContext, forKey: Keys.fieldContext) }
+    }
+
+    /// Spoken structure commands — "new paragraph", "bullet point", "all caps".
+    var voiceCommands: Bool {
+        didSet { defaults.set(voiceCommands, forKey: Keys.voiceCommands) }
+    }
+
+    /// Take back what was said before "scratch that".
+    var retraction: Bool {
+        didSet { defaults.set(retraction, forKey: Keys.retraction) }
+    }
+
+    var retractionScope: RetractionScope {
+        didSet { defaults.set(retractionScope.rawValue, forKey: Keys.retractionScope) }
+    }
+
+    /// Extra retraction phrases, on top of the built-in list.
+    var extraRetractionPhrases: [String] {
+        didSet { defaults.set(extraRetractionPhrases, forKey: Keys.extraRetractionPhrases) }
+    }
+
+    /// Recognise a list read out loud and mark it up.
+    var smartLists: Bool {
+        didSet { defaults.set(smartLists, forKey: Keys.smartLists) }
+    }
+
+    /// Lay a greeting and a sign-off out the way an email lays them out.
+    var emailShape: Bool {
+        didSet { defaults.set(emailShape, forKey: Keys.emailShape) }
+    }
+
+    /// Append the configured name to a closing that didn't include one.
+    var autoSignOff: Bool {
+        didSet { defaults.set(autoSignOff, forKey: Keys.autoSignOff) }
+    }
+
+    /// How the user signs their name. Prefilled from the macOS account, because that is
+    /// right often enough to be worth not asking, and wrong often enough to be editable.
+    var userName: String {
+        didSet { defaults.set(userName, forKey: Keys.userName) }
+    }
+
+    /// Every form of the name a sign-off might use, longest first.
+    ///
+    /// "Rohit Shidid" and "Rohit" both have to match, and the longer one has to be tried
+    /// first or "Thanks Rohit Shidid" signs itself "Rohit" and leaves a stray surname.
+    var signatureNames: [String] {
+        let trimmed = userName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+        let first = trimmed.split(separator: " ").first.map(String.init)
+        return [trimmed, first].compactMap { $0 }.reduced()
+    }
+
+    /// Let the on-device model repair grammar as well as clean up, at the cost of being
+    /// allowed to change words.
+    ///
+    /// Off by default and dependent on `smartCleanup`: this is the one pass that may write
+    /// something other than what was said, so it is opted into rather than out of.
+    var polishEnabled: Bool {
+        didSet { defaults.set(polishEnabled, forKey: Keys.polishEnabled) }
+    }
+
     private let defaults = UserDefaults.standard
 
     private enum Keys {
@@ -82,6 +155,16 @@ final class Settings {
         static let soundEnabled = "soundEnabled"
         static let engine = "engine"
         static let smartCleanup = "smartCleanup"
+        static let fieldContext = "fieldContext"
+        static let voiceCommands = "voiceCommands"
+        static let retraction = "retraction"
+        static let retractionScope = "retractionScope"
+        static let extraRetractionPhrases = "extraRetractionPhrases"
+        static let smartLists = "smartLists"
+        static let emailShape = "emailShape"
+        static let autoSignOff = "autoSignOff"
+        static let userName = "userName"
+        static let polishEnabled = "polishEnabled"
     }
 
     private init() {
@@ -95,5 +178,26 @@ final class Settings {
         cleanupEnabled = defaults.object(forKey: Keys.cleanupEnabled) as? Bool ?? true
         smartCleanup = defaults.object(forKey: Keys.smartCleanup) as? Bool ?? false
         soundEnabled = defaults.object(forKey: Keys.soundEnabled) as? Bool ?? true
+
+        fieldContext = defaults.object(forKey: Keys.fieldContext) as? Bool ?? true
+        voiceCommands = defaults.object(forKey: Keys.voiceCommands) as? Bool ?? true
+        retraction = defaults.object(forKey: Keys.retraction) as? Bool ?? true
+        retractionScope = RetractionScope(rawValue: defaults.string(forKey: Keys.retractionScope) ?? "")
+            ?? .sentence
+        extraRetractionPhrases = defaults.stringArray(forKey: Keys.extraRetractionPhrases) ?? []
+        smartLists = defaults.object(forKey: Keys.smartLists) as? Bool ?? true
+        emailShape = defaults.object(forKey: Keys.emailShape) as? Bool ?? true
+        autoSignOff = defaults.object(forKey: Keys.autoSignOff) as? Bool ?? true
+        userName = defaults.string(forKey: Keys.userName) ?? NSFullUserName()
+        // Off by default: the only pass allowed to write a word the speaker didn't say.
+        polishEnabled = defaults.object(forKey: Keys.polishEnabled) as? Bool ?? false
+    }
+}
+
+private extension Array where Element == String {
+    /// Drops duplicates and empties while keeping order.
+    func reduced() -> [String] {
+        var seen = Set<String>()
+        return filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
     }
 }

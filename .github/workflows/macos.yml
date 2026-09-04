@@ -39,14 +39,20 @@ jobs:
       # The app target needs macOS 26 and the Speech framework, which the runner image
       # does not have. The dictionary target is deliberately platform-neutral, so it — and
       # the contract that matters here — builds and tests anywhere.
-      - name: Test the dictionary target
+      - name: Test the dictionary and formatting targets
         run: swift test --filter VectorTests
 
       - name: Confirm the vectors on both sides are identical
         run: |
-          if ! diff -q shared/dictionary-test-vectors.json Tests/MurmurDictionaryTests/dictionary-test-vectors.json; then
-            echo "::error::The Swift test copy of the vectors has drifted from shared/."
-            echo "Run: cp shared/dictionary-test-vectors.json Tests/MurmurDictionaryTests/"
-            exit 1
-          fi
-          echo "Vectors match."
+          status=0
+          check() {
+            if ! diff -q "shared/$1" "$2/$1"; then
+              echo "::error::The Swift test copy of $1 has drifted from shared/."
+              echo "Run: cp shared/$1 $2/"
+              status=1
+            fi
+          }
+          check dictionary-test-vectors.json Tests/MurmurDictionaryTests
+          check formatting-test-vectors.json Tests/MurmurFormattingTests
+          [ $status -eq 0 ] && echo "Vectors match."
+          exit $status

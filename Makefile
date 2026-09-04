@@ -48,19 +48,26 @@ ifeq ($(strip $(SIGN_ID)),)
 SIGN_ID := -
 endif
 
-.PHONY: all build test app dmg run install clean icon print-dmg print-app
+.PHONY: all build test vectors app dmg run install clean icon print-dmg print-app
 
 all: app
 
 build:
 	swift build -c $(CONFIG) --scratch-path "$(SCRATCH)"
 
-## The dictionary contract — the same vectors the Windows side runs. Goes through the
+## The two cross-platform contracts — the dictionary and the structure pass — using the
+## same vectors the Windows side runs. `VectorTests` matches both suites. Goes through the
 ## shared scratch path for the same reason everything else does: a bare `swift test`
 ## writes .build into the iCloud-synced tree and reintroduces the mid-compile mutation
 ## race this Makefile exists to avoid.
-test:
+test: vectors
 	@swift test --filter VectorTests --scratch-path "$(SCRATCH)"
+
+## The test bundles read their own copy of the vectors, so an edit to shared/ that isn't
+## copied across passes locally and fails in CI. This copies them.
+vectors:
+	@cp shared/dictionary-test-vectors.json Tests/MurmurDictionaryTests/
+	@cp shared/formatting-test-vectors.json Tests/MurmurFormattingTests/
 
 ## Regenerates AppIcon.icns from Tools/makeicon.swift. Not a dependency of `app` — the
 ## icon rarely changes and rendering 10 PNGs on every build is wasted time.
