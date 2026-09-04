@@ -42,6 +42,8 @@ struct MainWindow: View {
             DS.Color.chassis.ignoresSafeArea()
 
             VStack(spacing: DS.Space.base) {
+                if !controller.isHotkeyArmed { permissionBanner }
+
                 TransportPanel(controller: controller)
 
                 sectionSwitch
@@ -60,6 +62,42 @@ struct MainWindow: View {
             .padding(DS.Space.roomy)
         }
         .frame(minWidth: 760, minHeight: 560)
+    }
+
+    /// Shown whenever the push-to-talk tap isn't installed.
+    ///
+    /// The app used to say nothing here. Without Accessibility the key is simply inert, and
+    /// the only clue was a menu item you had to go looking for — so the app looked broken
+    /// rather than ungranted. It says what is off, what still works, and what to do.
+    ///
+    /// It disappears on its own: `retryActivation` polls for the grant and arms the tap,
+    /// which flips `isHotkeyArmed` and takes this with it. No restart, no button to press
+    /// twice.
+    private var permissionBanner: some View {
+        HStack(spacing: DS.Space.base) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(DS.Color.meterAmber)
+
+            VStack(alignment: .leading, spacing: DS.Space.hair) {
+                Text("Push-to-talk is off")
+                    .font(DS.Font.bodyEmphasis)
+                    .foregroundStyle(DS.Color.ink)
+                Text("Murmur needs Accessibility to see the key. The Record button below "
+                    + "still works in the meantime.")
+                    .font(DS.Font.label)
+                    .foregroundStyle(DS.Color.inkSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: DS.Space.snug)
+
+            TransportKey(title: "Grant\u{2026}", isEngaged: true, engagedColor: DS.Color.ink) {
+                Permissions.openAccessibilitySettings()
+            }
+        }
+        .padding(DS.Space.roomy)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(BrushedPanel())
     }
 
     /// A segmented switch: one track, the selection sliding between segments.

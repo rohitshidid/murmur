@@ -49,6 +49,14 @@ final class DictationController {
     /// True while a tap has locked the mic open. Drives the HUD's lock indicator.
     private(set) var isLatched = false
 
+    /// Whether the push-to-talk event tap is actually installed.
+    ///
+    /// Observable because the app used to fail silently here: `tapCreate` returns nil
+    /// without Accessibility, the failure went to the log, and the app then announced
+    /// itself ready. The key did nothing and nothing on screen said why — which reads as a
+    /// broken app rather than an ungranted one.
+    private(set) var isHotkeyArmed = false
+
     private let hotkey = HotkeyMonitor()
     private let shortcuts = ShortcutMonitor()
     private let capture = AudioCapture()
@@ -56,6 +64,21 @@ final class DictationController {
 
     /// Injected only by tests; production reads the setting per-utterance below.
     private let formatter: (any TextFormatter)?
+
+    /// When the current capture began, and what it was started with — kept so a device
+    /// change arriving moments later can restart it rather than end the utterance.
+    private var captureStartedAt: Date?
+    private var captureFormat: AVAudioFormat?
+    /// One restart per utterance. A device that changes twice is genuinely changing.
+    private var didRestartCapture = false
+
+    /// How long after capture opens a device change is treated as the input settling.
+    ///
+    /// Measured: on a Mac with a Bluetooth device attached, the change lands ~130ms after
+    /// `capture.start` returns. The window is wide enough to cover that and short enough
+    /// that unplugging a headset mid-sentence still ends the utterance, which is what
+    /// should happen — the audio really is gone.
+    private static let captureSettleWindow: TimeInterval = 0.75
 
     /// Chosen per-utterance so the menu toggle applies to the very next hold.
     private var activeFormatter: any TextFormatter {
@@ -94,8 +117,46 @@ final class DictationController {
     /// the HUD don't sit waiting for audio that will never arrive.
     private func handleAudioConfigurationChange() {
         guard state.isActive else { return }
+
+        // A change this soon after capture opened is the input settling, not the user
+        // unplugging anything — so ending the utterance costs them a sentence they had
+        // already started saying. Restart capture into the same stream instead; the engine
+        // never sees the seam, because the continuation it is draining is unchanged.
+        if !didRestartCapture,
+           let startedAt = captureStartedAt,
+           Date().timeIntervalSince(startedAt) < Self.captureSettleWindow,
+           restartCapture() {
+            didRestartCapture = true
+            Log.audio.info("audio device settled after capture opened — restarted rather than cancelled")
+            return
+        }
+
         Log.audio.info("audio device changed mid-utterance — cancelling")
         fail("Audio device changed. Give it a moment and try again.")
+    }
+
+    /// - Returns: whether capture is running again.
+    ///
+    /// Deliberately reuses `audioContinuation`: the buffers have to keep arriving in the
+    /// same stream the feed task is draining, or the restart would reorder the utterance
+    /// instead of repairing it.
+    private func restartCapture() -> Bool {
+        guard let format = captureFormat, let continuation = audioContinuation else { return false }
+        do {
+            try capture.start(
+                outputFormat: format,
+                deviceID: AudioDevices.device(uid: Settings.shared.inputDeviceUID)?.id,
+                onBuffer: { chunk in continuation.yield(chunk) },
+                onLevel: { [weak self] level in
+                    Task { @MainActor in self?.updateLevel(level) }
+                }
+            )
+            captureStartedAt = Date()
+            return true
+        } catch {
+            Log.audio.error("capture restart failed: \(error.localizedDescription, privacy: .public)")
+            return false
+        }
     }
 
     func activate() -> Bool {
@@ -124,10 +185,12 @@ final class DictationController {
         // once, by the push-to-talk tap, which is the one the user is waiting on.
         shortcuts.start()
 
-        return hotkey.start()
+        isHotkeyArmed = hotkey.start()
+        return isHotkeyArmed
     }
 
     func deactivate() {
+        isHotkeyArmed = false
         hotkey.stop()
         shortcuts.stop()
         cancelDictation()
@@ -196,6 +259,8 @@ final class DictationController {
                     }
                 }
 
+                self.captureFormat = format
+                self.didRestartCapture = false
                 try capture.start(
                     outputFormat: format,
                     deviceID: AudioDevices.device(uid: Settings.shared.inputDeviceUID)?.id,
@@ -206,6 +271,7 @@ final class DictationController {
                         Task { @MainActor in self?.updateLevel(level) }
                     }
                 )
+                self.captureStartedAt = Date()
 
                 // Bail out if the user already let go while we were spinning up.
                 guard case .starting = self.state else {

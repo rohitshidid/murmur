@@ -578,16 +578,15 @@ footer { padding: 54px 0 72px; border-top: 1px solid var(--line); background: va
         <h3>It writes down what you meant.</h3>
         <p>
           Raw speech-to-text is not usable text. A cleanup pass — Apple's
-          <strong>on-device</strong> language model, or a deterministic rule pass if you'd
-          rather — strips the fillers, restores punctuation and paragraphs, formats spoken
-          lists, and honours mid-sentence corrections like <em>"make that three, actually"</em>.
+          <strong>on-device</strong> model, or rules if you'd rather — strips fillers,
+          restores punctuation and paragraphs, formats spoken lists, and applies the
+          corrections you make mid-sentence.
         </p>
         <p>
-          Two guards keep it in the hot path safely. It is <strong>bounded</strong>: past
-          four seconds it falls back to the rule pass, because a stalled model must never
-          cost you an utterance you already spoke. And it is <strong>guarded</strong>:
-          output containing words you didn't say is rejected outright — which is what stops
-          it answering your dictation instead of tidying it.
+          <strong>Bounded</strong>: past four seconds it falls back to the rules, so a
+          stalled model never costs you an utterance you already spoke.
+          <strong>Guarded</strong>: output containing words you didn't say is rejected, which
+          stops it answering your dictation instead of tidying it.
         </p>
       </div>
       <div class="panel">
@@ -905,7 +904,7 @@ murmur you tube <span class="k">-&gt;</span> murmur-youtube
             <tr>
               <td class="what"><span class="dot g"></span>Parakeet v3</td>
               <td>On release, in one pass<span class="sub">~110× realtime — a 30-second thought resolves in about a third of a second</span></td>
-              <td>A ~600 MB model, once<span class="sub">CoreML on the Neural Engine, ~66 MB resident</span></td>
+              <td>A ~470 MB model, once<span class="sub">CoreML on the Neural Engine, ~66 MB resident</span></td>
               <td>English accuracy<span class="sub">25 languages</span></td>
             </tr>
           </tbody>

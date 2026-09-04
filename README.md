@@ -233,7 +233,7 @@ change.
 | | Apple SpeechTranscriber | Parakeet v3 (FluidAudio) | Whisper large-v3 (WhisperKit) |
 |---|---|---|---|
 | Dependency | none | SwiftPM | SwiftPM |
-| Model download | OS-managed | ~600 MB | ~1.5 GB |
+| Model download | OS-managed | ~470 MB | ~1.5 GB |
 | English accuracy | good | best | good |
 | Languages | many | 25 | 99 |
 | Latency | low | ~80 ms | 200–500 ms |

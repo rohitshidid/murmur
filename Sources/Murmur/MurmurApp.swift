@@ -52,7 +52,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         hud = HUDPanel(controller: controller)
 
-        if !controller.activate() {
+        let armed = controller.activate()
+        if !armed {
             Permissions.promptForAccessibility()
             // The tap can only be created once the user grants Accessibility, and there's
             // no notification for that — poll until it takes.
@@ -72,7 +73,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 
         observeState()
-        Log.app.info("Murmur ready — hold \(Settings.shared.pushToTalkKey.displayName) to dictate")
+        // Told apart on purpose. Announcing "ready" while the tap failed to install is how
+        // an ungranted app reads as a broken one: the key does nothing and the log says
+        // everything is fine.
+        if armed {
+            Log.app.info("Murmur ready — hold \(Settings.shared.pushToTalkKey.displayName) to dictate")
+        } else {
+            Log.app.error("push-to-talk is OFF — Accessibility not granted. The Record button still works.")
+        }
     }
 
     /// `murmur://clear` empties the history — a scriptable hook, kept because it costs a
@@ -105,12 +113,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Polls until the tap actually installs.
+    ///
+    /// The condition is `activate()`, not `Permissions.hasAccessibility`. Those are not the
+    /// same question, and the difference is the bug: TCC stores a code-signing requirement,
+    /// so after an unsigned rebuild the stored grant no longer matches the binary — and the
+    /// old loop would exit on `hasAccessibility`, log "hotkey armed", and leave the tap
+    /// dead. Asking whether the tap was created cannot be wrong about it.
+    ///
+    /// Safe to call repeatedly: both monitors `stop()` before they start.
     private func retryActivation() {
         Task { @MainActor in
-            while !Permissions.hasAccessibility {
+            while !controller.activate() {
                 try? await Task.sleep(for: .seconds(1))
             }
-            controller.activate()
             Log.app.info("Accessibility granted — hotkey armed")
         }
     }
