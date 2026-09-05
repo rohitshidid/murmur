@@ -164,6 +164,11 @@ because `AudioCapture` always allocates fresh storage before handing off.
 **Two swappable seams.** `TranscriptionEngine` and `TextFormatter` are protocols so the
 two components most likely to change can change without touching anything else.
 
+**Permission failures are visible, not logged.** Without Accessibility the event tap simply
+cannot be created, so the key is inert — and an app that says nothing there reads as broken
+rather than ungranted. The main window carries a banner naming what is off, what still works
+(the Record button), and how to fix it, and it clears itself the moment the tap arms.
+
 **Structure is rules, not a model.** Retraction, spoken commands, lists and email shape live
 in `MurmurFormatting` as pure functions over strings, and they run whether or not smart
 cleanup is on. Smart cleanup needs macOS 26 with Apple Intelligence and is off by default —

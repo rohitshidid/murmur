@@ -96,6 +96,22 @@ and identifier verbatim, and a length band).
 view file that imports `MurmurFormatting` fails with "ambiguous for type lookup". Renaming it
 back costs an hour.
 
+**`Permissions.hasAccessibility` and "the tap is installed" are different questions.** The
+retry loop polls `controller.activate()`, not `hasAccessibility`, and that is not a style
+choice. TCC stores a code-signing *requirement*, so after an unsigned rebuild the API happily
+reports granted while `CGEvent.tapCreate` still returns nil. The old loop exited on
+`hasAccessibility`, logged "hotkey armed", and left the tap dead — the app then insisted
+push-to-talk was working while the key did nothing. Ask whether the tap exists; nothing else
+can be trusted. Both monitors `stop()` before they start, so polling `activate()` is safe.
+
+**A device change within 750ms of capture opening restarts capture instead of ending the
+utterance.** It looks like a missing early-exit and is the opposite. On a Mac with a
+Bluetooth device attached the change lands ~130ms after `capture.start` returns — that is the
+input settling, not the user unplugging anything, and cancelling costs a sentence already
+being spoken. The restart reuses the **same** `audioContinuation` on purpose: a fresh stream
+would reorder the utterance rather than repair it. One restart per utterance, so a device
+that genuinely goes away still ends it.
+
 **`FieldHarvester` refuses to read its own process, like `ScreenHarvester`.** Same trap, same
 crash: Accessibility against this process builds the tree synchronously on the calling
 thread, evaluating SwiftUI bodies off the main actor. Reachable from the Record button.
