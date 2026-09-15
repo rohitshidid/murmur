@@ -219,9 +219,16 @@ public enum CommandVerbs {
     static func numbered(_ text: String) -> String {
         let items = items(in: text)
         guard !items.isEmpty else { return text }
-        return items.enumerated()
-            .map { "\($0.offset + 1). " + capitalizedFirst($0.element) }
-            .joined(separator: "\n")
+        // Written as a loop rather than `items.enumerated().map`, which is not the same
+        // thing on a current SDK: `EnumeratedSequence` now conditionally conforms to
+        // `Collection`, so that chain resolves to `Collection.map` and emits a reference to
+        // a conformance descriptor that only exists in the macOS 26 stdlib. Iterating is
+        // plain `Sequence` and needs nothing new.
+        var lines: [String] = []
+        for (offset, item) in items.enumerated() {
+            lines.append("\(offset + 1). " + capitalizedFirst(item))
+        }
+        return lines.joined(separator: "\n")
     }
 
     static func joined(_ text: String) -> String {

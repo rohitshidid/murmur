@@ -18,7 +18,15 @@ permissions:
 jobs:
   dictionary-contract:
     name: Dictionary contract
-    runs-on: macos-15
+    # macos-26, not macos-15, and it has to match `Package.swift`'s `.macOS(.v26)`.
+    #
+    # SwiftPM builds the test bundle for the declared deployment target, so on an older
+    # runner the bundle is "built for macOS 26.0 which is newer than running OS" and can
+    # only be loaded at all while it happens to reference no symbol the older stdlib is
+    # missing. That is luck, not compatibility: the first use of a newer stdlib API turns
+    # it into `dlopen` failing with "Symbol not found" before a single test runs, which
+    # reads as a broken test suite rather than a mismatched runner.
+    runs-on: macos-26
     timeout-minutes: 20
 
     steps:
