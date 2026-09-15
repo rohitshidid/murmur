@@ -6,12 +6,21 @@ import Foundation
 /// thing I noticed". Three rules keep the inference honest, and together they mean an
 /// ordinary sentence containing an ordinal is left alone:
 ///
-/// 1. **Clause position.** A cue only counts at the start of the text, after sentence or
-///    comma punctuation, or after "and". "The first thing" fails this and is never a cue,
-///    because "the" sits in front of it.
+/// 1. **Clause position.** A cue counts at the start of the text, after sentence or comma
+///    punctuation, or after "and". A cue with nothing but a space in front of it — which is
+///    what a speech engine gives you when the speaker didn't pause — counts too, but only
+///    under the extra conditions in `looseSequenceHolds`. "The first thing" fails this and
+///    is never a cue, because "the" sits in front of it.
 /// 2. **Starts at one, ascends.** The sequence has to open with "first" and climb. A stray
 ///    "second" with no "first" in front of it is not a list.
 /// 3. **Two items minimum.** "First I need coffee." stays a sentence.
+///
+/// Rule 1 used to require punctuation outright, and that is why dictated lists worked only
+/// sometimes: the punctuation came from the *cleanup* pass, which is off by default and
+/// unavailable on most Macs, so "first buy milk second call the bank" — said in one breath,
+/// which is how people actually say it — arrived here as one flat sentence with nothing to
+/// anchor a cue to. A space is now enough, and `looseSequenceHolds` carries the weight rule
+/// 1 used to.
 ///
 /// Explicit spoken markers — "bullet point", "number one" — never come through here as
 /// inference; `SpokenCommands` has already turned them into real markers, and this pass
@@ -82,7 +91,35 @@ public enum ListStructure {
         let leadStart: String.Index
         let itemStart: String.Index
         let value: Int
+        /// Whether this cue had only whitespace in front of it rather than punctuation.
+        let loose: Bool
     }
+
+    /// Words that make a following ordinal attributive rather than an item marker.
+    ///
+    /// Closed-class only, and that is the point: "the first thing", "my first car", "for the
+    /// first time", "in first place". A verb can do the same thing ("he finished first") but
+    /// the set of verbs is open, so that case is caught on the way out instead — see
+    /// `looseSequenceHolds`.
+    private static let attributive: Set<String> = [
+        "the", "a", "an", "this", "that", "these", "those", "my", "your", "his", "her", "its",
+        "our", "their", "whose", "every", "each", "another", "any", "some", "no", "one",
+        "at", "in", "on", "for", "from", "of", "to", "by", "with", "about", "into", "onto",
+        "than", "until", "since", "during", "per",
+    ]
+
+    /// Words no genuine list item begins with.
+    ///
+    /// A spoken item is a clause — "buy milk", "ship the beta". A fragment starting with a
+    /// conjunction or a preposition is the tail of the sentence the ordinal was sitting in,
+    /// which is exactly what "he finished first *and she finished* second" produces.
+    private static let neverStartsAnItem: Set<String> = [
+        "and", "or", "but", "nor", "yet", "so", "because", "although", "though", "while",
+        "whereas", "since", "unless", "until", "if", "when", "where", "than", "then", "also",
+        "plus", "in", "on", "at", "to", "of", "from", "with", "without", "by", "about",
+        "into", "onto", "over", "under", "between", "through", "during", "against", "after",
+        "before", "as", "per", "via", "near", "upon",
+    ]
 
     private static func infer(in text: String, options: StructureOptions, startAt: Int) -> String {
         let words = (ordinals.keys.map { $0 } + continuations)
@@ -95,8 +132,13 @@ public enum ListStructure {
             .joined(separator: "|")
 
         // The lead is captured rather than looked behind, so the pattern stays inside the
-        // fixed-length-lookbehind subset both regex engines agree on.
-        let pattern = "(?<lead>^|[.!?;,\\n]\\s*|\\s+and\\s+)(?<cue>\(words))(?![\\p{L}\\p{N}])[,:]?\\s+(?=\\S)"
+        // fixed-length-lookbehind subset both regex engines agree on. `loose` is its own
+        // group so the pass can tell a cue the speaker punctuated from one it merely paused
+        // at — the two are held to different standards below. It is last in the alternation
+        // because alternation is ordered: "and" has to be read as "and" before it is read as
+        // whitespace-plus-a-word.
+        let pattern = "(?<lead>^|[.!?;,\\n]\\s*|\\s+and\\s+|(?<loose>[ \\t]+))"
+            + "(?<cue>\(words))(?![\\p{L}\\p{N}])[,:]?\\s+(?=\\S)"
         guard let regex = Rx.make(pattern) else { return text }
 
         var cues: [Cue] = []
@@ -107,20 +149,34 @@ public enum ListStructure {
                   let cue = Rx.text(match, text, named: "cue")?.lowercased()
             else { continue }
 
+            let loose = match.range(withName: "loose").location != NSNotFound
+
             let normalized = cue.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
             let value: Int
             if let ordinal = ordinals[normalized] {
                 value = ordinal
             } else if continuations.contains(normalized), !cues.isEmpty {
+                // Never on a loose lead. "then", "next" and "also" are far too ordinary to
+                // start an item off nothing but a space — an explicit ordinal at least names
+                // its own position, and these only inherit one.
+                guard !loose else { continue }
                 value = expected
             } else {
                 continue
             }
 
+            // A space in front is not enough on its own. "the first thing", "my first car",
+            // "for the first time" all put an ordinary word in front of the ordinal, and
+            // that word is what says the ordinal is describing a noun rather than marking an
+            // item.
+            if loose, attributive.contains(wordBefore(whole.lowerBound, in: text)) { continue }
+
             // Must open at one and climb by one. Anything else is an ordinal doing ordinary
             // work in a sentence, not an item marker.
             guard value == expected else { continue }
-            cues.append(Cue(leadStart: whole.lowerBound, itemStart: whole.upperBound, value: value))
+            cues.append(
+                Cue(leadStart: whole.lowerBound, itemStart: whole.upperBound, value: value, loose: loose)
+            )
             expected += 1
         }
 
@@ -134,6 +190,10 @@ public enum ListStructure {
             guard !item.isEmpty else { return text }
             items.append(item)
         }
+
+        // Everything above is the old contract. This is the price of accepting a cue that
+        // had only a space in front of it.
+        if cues.contains(where: \.loose), !looseSequenceHolds(items) { return text }
 
         let preamble = String(text[text.startIndex..<cues[0].leadStart])
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -153,6 +213,41 @@ public enum ListStructure {
             lines.append(style.marker(at: startAt + offset) + tidy(item, stripPeriod: allFragments))
         }
         return lines.joined(separator: "\n")
+    }
+
+    /// The word immediately before `index`, lowercased, or "" at the start of the text.
+    private static func wordBefore(_ index: String.Index, in text: String) -> String {
+        let head = text[text.startIndex..<index]
+        let word = head.reversed().prefix { $0.isLetter || $0 == "'" || $0 == "\u{2019}" }
+        return String(word.reversed()).lowercased()
+    }
+
+    /// Whether a sequence that leaned on a loose cue reads as a list rather than a sentence.
+    ///
+    /// Two checks, and between them they cover the failure that punctuation used to rule out
+    /// for free — an ordinal used as an adverb, with the rest of the sentence mistaken for an
+    /// item:
+    ///
+    /// - **No item opens with a conjunction or a preposition.** "He finished first and she
+    ///   finished second" yields the item "and she finished", and "She placed first in the
+    ///   race and second in the relay" yields "in the race". A spoken item is a clause and
+    ///   starts like one.
+    /// - **No item still contains an ordinal.** A leftover "third" sitting inside item two
+    ///   means the sequence was read off the wrong words — "I ate first, she ate second, he
+    ///   ate third" splits into two items and strands the third ordinal, which is the tell.
+    private static func looseSequenceHolds(_ items: [String]) -> Bool {
+        for item in items {
+            let first = item.prefix { $0.isLetter || $0 == "'" || $0 == "\u{2019}" }.lowercased()
+            if neverStartsAnItem.contains(first) { return false }
+            if containsOrdinal(item) { return false }
+        }
+        return true
+    }
+
+    private static func containsOrdinal(_ item: String) -> Bool {
+        let words = ordinals.keys.filter { !$0.contains(" ") }
+        guard let regex = Rx.make(Rx.phrases(words)) else { return false }
+        return Rx.firstMatch(regex, in: item) != nil
     }
 
     private static func tidy(_ item: String, stripPeriod: Bool) -> String {

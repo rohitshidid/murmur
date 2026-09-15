@@ -24,7 +24,16 @@
     "",
     "polishGuardCases are separate: they check the guard around the optional grammar-repair",
     "model pass, which is allowed to change words and therefore cannot use the cleanup",
-    "guard. `accepted` is what the guard must return for that pair."
+    "guard. `accepted` is what the guard must return for that pair.",
+    "",
+    "commandVerbCases cover Command Mode's model-free transforms: hold the command key over",
+    "selected text and say what to do to it. `instruction` is what was said, `selection` is",
+    "what was highlighted, and `expected` is the result — or null when the instruction is not",
+    "one of these and belongs to the on-device model instead.",
+    "",
+    "commandGuardCases check the guard around that model pass. It is neither of the other two",
+    "guards: a rewrite is asked to change words, so the cleanup guard is wrong, and it may drop",
+    "numbers and names, so PolishGuard is wrong. It only asks that nothing was invented."
   ],
   "version": 1,
   "cases": [
@@ -79,7 +88,9 @@
     {
       "name": "alignment survives a repeated verb",
       "phase": "preClean",
-      "options": { "retractionScope": "clause" },
+      "options": {
+        "retractionScope": "clause"
+      },
       "input": "I'll call the client, then I'll email the team, no wait, I'll email them first.",
       "expected": "I'll call the client, then I'll email them first."
     },
@@ -92,14 +103,18 @@
     {
       "name": "clause scope stops at the previous clause when nothing aligns",
       "phase": "preClean",
-      "options": { "retractionScope": "clause" },
+      "options": {
+        "retractionScope": "clause"
+      },
       "input": "I'll call the client, then I'll email the team, no wait, let's just cancel it.",
       "expected": "I'll call the client, let's just cancel it."
     },
     {
       "name": "retraction can be switched off",
       "phase": "preClean",
-      "options": { "retractionEnabled": false },
+      "options": {
+        "retractionEnabled": false
+      },
       "input": "Let's go with the blue one. Scratch that. Let's go with the green one.",
       "expected": "Let's go with the blue one. Scratch that. Let's go with the green one."
     },
@@ -130,14 +145,18 @@
     {
       "name": "next item follows the destination's list style",
       "phase": "preClean",
-      "options": { "listStyle": "bullet" },
+      "options": {
+        "listStyle": "bullet"
+      },
       "input": "the agenda next item budget next item hiring",
       "expected": "the agenda\n• budget\n• hiring"
     },
     {
       "name": "a continued list keeps counting from the caret",
       "phase": "preClean",
-      "options": { "textBeforeCaret": "1. Buy milk\n2. Call the bank\n" },
+      "options": {
+        "textBeforeCaret": "1. Buy milk\n2. Call the bank\n"
+      },
       "input": "next item book the flight",
       "expected": "3. book the flight"
     },
@@ -150,198 +169,392 @@
     {
       "name": "line breaks collapse in a single-line field",
       "phase": "preClean",
-      "options": { "field": "searchField" },
+      "options": {
+        "field": "searchField"
+      },
       "input": "swift concurrency new line docs",
       "expected": "swift concurrency docs"
     },
     {
       "name": "commands can be switched off",
       "phase": "preClean",
-      "options": { "commandsEnabled": false },
+      "options": {
+        "commandsEnabled": false
+      },
       "input": "the draft is ready new paragraph let me know",
       "expected": "the draft is ready new paragraph let me know"
     },
     {
       "name": "spoken ordinals become a numbered list",
       "phase": "structure",
-      "options": { "field": "longText" },
+      "options": {
+        "field": "longText"
+      },
       "input": "I need three things. First, buy milk. Second, call the bank. Third, book the flight.",
       "expected": "I need three things:\n1. Buy milk\n2. Call the bank\n3. Book the flight"
     },
     {
       "name": "list style follows the destination",
       "phase": "structure",
-      "options": { "field": "longText", "listStyle": "bullet" },
+      "options": {
+        "field": "longText",
+        "listStyle": "bullet"
+      },
       "input": "I need three things. First, buy milk. Second, call the bank. Third, book the flight.",
       "expected": "I need three things:\n• Buy milk\n• Call the bank\n• Book the flight"
     },
     {
       "name": "an ordinal doing ordinary work is not a list",
       "phase": "structure",
-      "options": { "field": "longText" },
+      "options": {
+        "field": "longText"
+      },
       "input": "The first thing I noticed was the colour.",
       "expected": "The first thing I noticed was the colour."
     },
     {
       "name": "one item is not a list",
       "phase": "structure",
-      "options": { "field": "longText" },
+      "options": {
+        "field": "longText"
+      },
       "input": "First I need coffee.",
       "expected": "First I need coffee."
     },
     {
       "name": "a list out of order is not a list",
       "phase": "structure",
-      "options": { "field": "longText" },
+      "options": {
+        "field": "longText"
+      },
       "input": "Second guessing this whole thing. Third parties are involved.",
       "expected": "Second guessing this whole thing. Third parties are involved."
     },
     {
       "name": "no lists in a code editor",
       "phase": "structure",
-      "options": { "field": "code" },
+      "options": {
+        "field": "code"
+      },
       "input": "First, buy milk. Second, call the bank",
       "expected": "First, buy milk. Second, call the bank"
     },
     {
       "name": "nothing is joined onto the caret in a terminal",
       "phase": "structure",
-      "options": { "field": "terminal", "textBeforeCaret": "git commit -m" },
+      "options": {
+        "field": "terminal",
+        "textBeforeCaret": "git commit -m"
+      },
       "input": "Fix the leak",
       "expected": "Fix the leak"
     },
     {
       "name": "no full stop appended in a code editor",
       "phase": "structure",
-      "options": { "field": "code" },
+      "options": {
+        "field": "code"
+      },
       "input": "let total = items.count.",
       "expected": "let total = items.count"
     },
     {
       "name": "lists can be switched off",
       "phase": "structure",
-      "options": { "field": "longText", "listsEnabled": false },
+      "options": {
+        "field": "longText",
+        "listsEnabled": false
+      },
       "input": "First, buy milk. Second, call the bank.",
       "expected": "First, buy milk. Second, call the bank."
     },
     {
       "name": "a list continues the numbering above the caret",
       "phase": "structure",
-      "options": { "field": "longText", "textBeforeCaret": "1. Buy milk\n2. Call the bank\n" },
+      "options": {
+        "field": "longText",
+        "textBeforeCaret": "1. Buy milk\n2. Call the bank\n"
+      },
       "input": "First, book the flight. Second, pack.",
       "expected": "3. Book the flight\n4. Pack"
     },
     {
       "name": "closing and name become a signature block",
       "phase": "structure",
-      "options": { "field": "emailBody", "userNames": ["Rohit"] },
+      "options": {
+        "field": "emailBody",
+        "userNames": [
+          "Rohit"
+        ]
+      },
       "input": "I'll have it over by Friday. Thanks Rohit",
       "expected": "I'll have it over by Friday.\n\nThanks,\nRohit"
     },
     {
       "name": "the configured spelling of the name wins",
       "phase": "structure",
-      "options": { "field": "emailBody", "userNames": ["Rohit Shidid", "Rohit"] },
+      "options": {
+        "field": "emailBody",
+        "userNames": [
+          "Rohit Shidid",
+          "Rohit"
+        ]
+      },
       "input": "Let me know if that works. Best regards rohit shidid",
       "expected": "Let me know if that works.\n\nBest regards,\nRohit Shidid"
     },
     {
       "name": "a bare closing signs itself when auto sign-off is on",
       "phase": "structure",
-      "options": { "field": "emailBody", "userNames": ["Rohit"] },
+      "options": {
+        "field": "emailBody",
+        "userNames": [
+          "Rohit"
+        ]
+      },
       "input": "Let me know. Thanks.",
       "expected": "Let me know.\n\nThanks,\nRohit"
     },
     {
       "name": "auto sign-off off leaves a bare closing alone",
       "phase": "structure",
-      "options": { "field": "emailBody", "userNames": ["Rohit"], "autoSignOff": false },
+      "options": {
+        "field": "emailBody",
+        "userNames": [
+          "Rohit"
+        ],
+        "autoSignOff": false
+      },
       "input": "Let me know. Thanks.",
       "expected": "Let me know. Thanks."
     },
     {
       "name": "no configured name means no signature",
       "phase": "structure",
-      "options": { "field": "emailBody" },
+      "options": {
+        "field": "emailBody"
+      },
       "input": "Let me know. Thanks.",
       "expected": "Let me know. Thanks."
     },
     {
       "name": "a greeting becomes its own line",
       "phase": "structure",
-      "options": { "field": "emailBody" },
+      "options": {
+        "field": "emailBody"
+      },
       "input": "Hi Sarah I wanted to check on the invoice.",
       "expected": "Hi Sarah,\n\nI wanted to check on the invoice."
     },
     {
       "name": "a greeting with no name does not invent one",
       "phase": "structure",
-      "options": { "field": "emailBody" },
+      "options": {
+        "field": "emailBody"
+      },
       "input": "Hi I wanted to check on the invoice.",
       "expected": "Hi,\n\nI wanted to check on the invoice."
     },
     {
       "name": "a greeting halfway down an email is a word",
       "phase": "structure",
-      "options": { "field": "emailBody", "textBeforeCaret": "Thanks for sending that over. " },
+      "options": {
+        "field": "emailBody",
+        "textBeforeCaret": "Thanks for sending that over. "
+      },
       "input": "Hi Sarah mentioned the invoice.",
       "expected": "Hi Sarah mentioned the invoice."
     },
     {
       "name": "email shape does not apply outside an email body",
       "phase": "structure",
-      "options": { "field": "longText", "userNames": ["Rohit"] },
+      "options": {
+        "field": "longText",
+        "userNames": [
+          "Rohit"
+        ]
+      },
       "input": "I'll have it over by Friday. Thanks Rohit",
       "expected": "I'll have it over by Friday. Thanks Rohit"
     },
     {
       "name": "a continued sentence is not capitalised",
       "phase": "structure",
-      "options": { "field": "longText", "textBeforeCaret": "I went to the store" },
+      "options": {
+        "field": "longText",
+        "textBeforeCaret": "I went to the store"
+      },
       "input": "And bought milk.",
       "expected": " and bought milk."
     },
     {
       "name": "a finished sentence keeps its capital",
       "phase": "structure",
-      "options": { "field": "longText", "textBeforeCaret": "I went to the store." },
+      "options": {
+        "field": "longText",
+        "textBeforeCaret": "I went to the store."
+      },
       "input": "And bought milk.",
       "expected": " And bought milk."
     },
     {
       "name": "a name after a continuation is not lowercased",
       "phase": "structure",
-      "options": { "field": "longText", "textBeforeCaret": "I spoke to" },
+      "options": {
+        "field": "longText",
+        "textBeforeCaret": "I spoke to"
+      },
       "input": "Sarah about it.",
       "expected": " Sarah about it."
     },
     {
       "name": "an acronym after a continuation is left alone",
       "phase": "structure",
-      "options": { "field": "longText", "textBeforeCaret": "the deploy runs on" },
+      "options": {
+        "field": "longText",
+        "textBeforeCaret": "the deploy runs on"
+      },
       "input": "AWS every night.",
       "expected": " AWS every night."
     },
     {
       "name": "no full stop in a search field",
       "phase": "structure",
-      "options": { "field": "searchField" },
+      "options": {
+        "field": "searchField"
+      },
       "input": "Swift concurrency.",
       "expected": "Swift concurrency"
     },
     {
       "name": "no full stop on a subject line",
       "phase": "structure",
-      "options": { "field": "emailSubject" },
+      "options": {
+        "field": "emailSubject"
+      },
       "input": "Invoice for August.",
       "expected": "Invoice for August"
     },
     {
       "name": "a question mark survives a field that wants no full stop",
       "phase": "structure",
-      "options": { "field": "emailSubject" },
+      "options": {
+        "field": "emailSubject"
+      },
       "input": "Are we still on for Friday?",
       "expected": "Are we still on for Friday?"
+    },
+    {
+      "name": "spoken punctuation closes up against the word before it",
+      "phase": "preClean",
+      "input": "is this the right one question mark",
+      "expected": "is this the right one?"
+    },
+    {
+      "name": "an exclamation mark closes up too",
+      "phase": "preClean",
+      "input": "that is the one exclamation mark",
+      "expected": "that is the one!"
+    },
+    {
+      "name": "parentheses close up around what they enclose",
+      "phase": "preClean",
+      "input": "call me later open paren after lunch close paren today",
+      "expected": "call me later (after lunch) today"
+    },
+    {
+      "name": "quotes close up around what they enclose",
+      "phase": "preClean",
+      "input": "he said open quote hello close quote to me",
+      "expected": "he said “hello” to me"
+    },
+    {
+      "name": "an ellipsis closes up against the word before it",
+      "phase": "preClean",
+      "input": "wait for it ellipsis then go",
+      "expected": "wait for it… then go"
+    },
+    {
+      "name": "a percent sign closes up against its number",
+      "phase": "preClean",
+      "input": "margin was up 12 percent sign this quarter",
+      "expected": "margin was up 12% this quarter"
+    },
+    {
+      "name": "an at sign joins the words on either side",
+      "phase": "preClean",
+      "input": "ping me at sign murmur about it",
+      "expected": "ping me @murmur about it"
+    },
+    {
+      "name": "an em dash keeps the spaces around it",
+      "phase": "preClean",
+      "input": "we need it now em dash today",
+      "expected": "we need it now — today"
+    },
+    {
+      "name": "a spoken list is recognised without punctuation between the items",
+      "phase": "structure",
+      "options": {
+        "field": "longText"
+      },
+      "input": "I need three things first buy milk second call the bank third book the flight",
+      "expected": "I need three things:\n1. Buy milk\n2. Call the bank\n3. Book the flight"
+    },
+    {
+      "name": "two unpunctuated items are still a list",
+      "phase": "structure",
+      "options": {
+        "field": "longText"
+      },
+      "input": "the plan is first ship the beta second collect feedback",
+      "expected": "the plan is:\n1. Ship the beta\n2. Collect feedback"
+    },
+    {
+      "name": "an ordinal after a determiner is never an item",
+      "phase": "structure",
+      "options": {
+        "field": "longText"
+      },
+      "input": "My first car was a Civic. The second one was a Golf.",
+      "expected": "My first car was a Civic. The second one was a Golf."
+    },
+    {
+      "name": "an adverbial ordinal is not an item",
+      "phase": "structure",
+      "options": {
+        "field": "longText"
+      },
+      "input": "He finished first and she finished second, then they went home.",
+      "expected": "He finished first and she finished second, then they went home."
+    },
+    {
+      "name": "an ordinal inside a prepositional phrase is not an item",
+      "phase": "structure",
+      "options": {
+        "field": "longText"
+      },
+      "input": "She placed first in the race and second in the relay.",
+      "expected": "She placed first in the race and second in the relay."
+    },
+    {
+      "name": "a leftover ordinal means the reading is wrong",
+      "phase": "structure",
+      "options": {
+        "field": "longText"
+      },
+      "input": "I ate first, she ate second, he ate third.",
+      "expected": "I ate first, she ate second, he ate third."
+    },
+    {
+      "name": "an unpunctuated list still follows the destination style",
+      "phase": "structure",
+      "options": {
+        "field": "longText",
+        "listStyle": "bullet"
+      },
+      "input": "the plan is first ship the beta second collect feedback",
+      "expected": "the plan is:\n• Ship the beta\n• Collect feedback"
     }
   ],
   "polishGuardCases": [
@@ -397,6 +610,199 @@
       "name": "the model explaining itself is rejected",
       "original": "me and him goes to the store",
       "polished": "Here's the corrected sentence: He and I went to the store.",
+      "accepted": false
+    }
+  ],
+  "commandVerbCases": [
+    {
+      "name": "uppercase",
+      "instruction": "make this uppercase",
+      "selection": "ship it on friday",
+      "expected": "SHIP IT ON FRIDAY"
+    },
+    {
+      "name": "all caps is the same instruction",
+      "instruction": "all caps",
+      "selection": "ship it on friday",
+      "expected": "SHIP IT ON FRIDAY"
+    },
+    {
+      "name": "politeness is not part of the instruction",
+      "instruction": "can you please make this all caps",
+      "selection": "ship it on friday",
+      "expected": "SHIP IT ON FRIDAY"
+    },
+    {
+      "name": "lowercase",
+      "instruction": "make it lowercase",
+      "selection": "SHIP IT ON FRIDAY",
+      "expected": "ship it on friday"
+    },
+    {
+      "name": "title case leaves the small words alone",
+      "instruction": "title case this",
+      "selection": "the state of the art in speech",
+      "expected": "The State of the Art in Speech"
+    },
+    {
+      "name": "sentence case",
+      "instruction": "sentence case",
+      "selection": "THE BUILD IS GREEN. SHIP IT.",
+      "expected": "The build is green. Ship it."
+    },
+    {
+      "name": "a spoken run of things becomes bullets",
+      "instruction": "bullet these",
+      "selection": "milk, bread and eggs",
+      "expected": "• Milk\n• Bread\n• Eggs"
+    },
+    {
+      "name": "numbered wins over list",
+      "instruction": "turn this into a numbered list",
+      "selection": "milk, bread and eggs",
+      "expected": "1. Milk\n2. Bread\n3. Eggs"
+    },
+    {
+      "name": "existing lines are the items",
+      "instruction": "bullet points",
+      "selection": "buy milk\ncall the bank",
+      "expected": "• Buy milk\n• Call the bank"
+    },
+    {
+      "name": "re-listing does not stack markers",
+      "instruction": "make this a numbered list",
+      "selection": "• buy milk\n• call the bank",
+      "expected": "1. Buy milk\n2. Call the bank"
+    },
+    {
+      "name": "join the lines",
+      "instruction": "put it on one line",
+      "selection": "buy milk\ncall the bank",
+      "expected": "buy milk call the bank"
+    },
+    {
+      "name": "add a period",
+      "instruction": "add a full stop",
+      "selection": "ship it on friday",
+      "expected": "ship it on friday."
+    },
+    {
+      "name": "remove a period",
+      "instruction": "remove the period",
+      "selection": "ship it on friday.",
+      "expected": "ship it on friday"
+    },
+    {
+      "name": "an ellipsis is not a full stop",
+      "instruction": "remove the period",
+      "selection": "wait for it…",
+      "expected": null
+    },
+    {
+      "name": "wrap in quotes",
+      "instruction": "put this in quotes",
+      "selection": "ship it",
+      "expected": "“ship it”"
+    },
+    {
+      "name": "unwrap quotes",
+      "instruction": "remove the quotes",
+      "selection": "“ship it”",
+      "expected": "ship it"
+    },
+    {
+      "name": "tidy the spacing",
+      "instruction": "fix the spacing",
+      "selection": "ship  it   on friday",
+      "expected": "ship it on friday"
+    },
+    {
+      "name": "an open-ended instruction is not a verb",
+      "instruction": "make this more formal",
+      "selection": "ship it on friday",
+      "expected": null
+    },
+    {
+      "name": "a verb with extra conditions is not a verb",
+      "instruction": "make this uppercase but leave the last word",
+      "selection": "ship it on friday",
+      "expected": null
+    },
+    {
+      "name": "a transform that changes nothing is not a match",
+      "instruction": "make this uppercase",
+      "selection": "SHIP IT ON FRIDAY",
+      "expected": null
+    },
+    {
+      "name": "an empty instruction matches nothing",
+      "instruction": "",
+      "selection": "ship it on friday",
+      "expected": null
+    }
+  ],
+  "commandGuardCases": [
+    {
+      "name": "a rewrite may change every word",
+      "original": "me and him was gonna ship it friday",
+      "rewritten": "He and I intended to ship it on Friday.",
+      "instruction": "make this more formal",
+      "accepted": true
+    },
+    {
+      "name": "a rewrite may drop a number",
+      "original": "we need 3 by Friday and 12 by Monday",
+      "rewritten": "12 by Monday.",
+      "instruction": "just keep the Monday part",
+      "accepted": true
+    },
+    {
+      "name": "a rewrite may not invent a number",
+      "original": "we need it by Friday",
+      "rewritten": "We need it by Friday, 3 September.",
+      "instruction": "make this more formal",
+      "accepted": false
+    },
+    {
+      "name": "a rewrite may not alter a number",
+      "original": "send £250 to the vendor",
+      "rewritten": "Please send £350 to the vendor.",
+      "instruction": "make this more formal",
+      "accepted": false
+    },
+    {
+      "name": "a rewrite may not invent a link",
+      "original": "see the docs for details",
+      "rewritten": "See https://example.com/docs for details.",
+      "instruction": "make this more formal",
+      "accepted": false
+    },
+    {
+      "name": "a rewrite may not start explaining itself",
+      "original": "ship it friday",
+      "rewritten": "Here's a more formal version: We will ship on Friday.",
+      "instruction": "make this more formal",
+      "accepted": false
+    },
+    {
+      "name": "a rewrite may not repeat the instruction back",
+      "original": "ship it friday",
+      "rewritten": "Make this more formal.",
+      "instruction": "make this more formal",
+      "accepted": false
+    },
+    {
+      "name": "a rewrite may not run away",
+      "original": "ship it friday",
+      "rewritten": "We will ship it on Friday, and I want to take a moment to explain why that date matters a great deal to everyone involved in this particular project effort.",
+      "instruction": "make this more formal",
+      "accepted": false
+    },
+    {
+      "name": "an empty rewrite is rejected",
+      "original": "ship it friday",
+      "rewritten": "   ",
+      "instruction": "make this more formal",
       "accepted": false
     }
   ]

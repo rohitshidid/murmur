@@ -31,7 +31,7 @@ working.
 | File | Specifies | Implemented in |
 |---|---|---|
 | `dictionary-test-vectors.json` | correction and snippet behaviour | `MurmurDictionary` |
-| `formatting-test-vectors.json` | retraction, spoken commands, lists, email shape, caret continuation, and the polish guard | `MurmurFormatting` |
+| `formatting-test-vectors.json` | retraction, spoken commands, lists, email shape, caret continuation, the polish guard, and Command Mode's model-free verbs and guard | `MurmurFormatting` |
 
 Both implementations run them in CI. If you change how any of it works, change the vectors
 first, watch both sides go red, then make them green. Changing one implementation to "fix"
@@ -111,6 +111,25 @@ input settling, not the user unplugging anything, and cancelling costs a sentenc
 being spoken. The restart reuses the **same** `audioContinuation` on purpose: a fresh stream
 would reorder the utterance rather than repair it. One restart per utterance, so a device
 that genuinely goes away still ends it.
+
+**List inference accepts a cue with only a space in front of it, and the three guards in
+`looseSequenceHolds` are what pay for it.** The old rule required punctuation before every
+cue, which sounds strict and was actually a bug: the punctuation came from the *cleanup*
+pass, which is off by default and needs hardware most Macs don't have — so "first buy milk
+second call the bank", said in one breath, arrived as a flat sentence and no list was ever
+found. Lists worked when smart cleanup was on and silently didn't when it wasn't. A loose cue
+is now allowed, and three checks replace what the punctuation used to rule out for free: no
+determiner in front of it, no item starting with a conjunction or preposition, and no ordinal
+left stranded inside an item. Remove any one and "he finished first and she finished second"
+becomes a two-item list.
+
+**Spoken punctuation commands close up their own spacing, inside `SpokenCommands`.** Every
+replacement is written with padding — `"? "`, `" ("` — because each has to read correctly
+wherever it lands. Nothing consumed the space in front of the *phrase*, so "the right one
+question mark" typed `the right one ?` and "open paren after lunch close paren" typed `(
+after lunch )`. It is fixed there rather than in the cleanup pass on purpose: cleanup is
+optional, and its rule-based fallback only ever repaired the sentence-final marks, so
+brackets and quotes were wrong in every configuration.
 
 **`FieldHarvester` refuses to read its own process, like `ScreenHarvester`.** Same trap, same
 crash: Accessibility against this process builds the tree synchronously on the calling
@@ -257,12 +276,38 @@ lookahead, `\p{L}`, and `$1`–`$9` in replacements. Nothing else.
 
 ---
 
+## Command Mode
+
+A second `HotkeyMonitor` on a second key. Hold it over selected text, say what to do, let go.
+Four things about it are load-bearing:
+
+- **The selection is read at key *down* and confirmed again immediately before injection.**
+  Everything in between is asynchronous — transcription, then a model call of up to twelve
+  seconds — and a selection does not reliably survive that. Reading it late would sometimes
+  rewrite something the user never pointed at, and that loss has no undo.
+- **Nothing selected is a refusal with a reason, never a fall-through to dictation.** The
+  fall-through types "rephrase this more formally" into the user's document.
+- **`CommandVerbs` runs before the model, not after it.** "Make this uppercase" has exactly
+  one right answer; asking a language model for it is slower and occasionally wrong. It is
+  also the whole reason the feature does something on a Mac without Apple Intelligence.
+- **The two keys may never be the same key.** Both taps fire on one press, in an unspecified
+  order, and the loser is swallowed by the `.idle` guard with nothing on screen to explain
+  it. `Settings.commandModeIsUsable` is the question to ask; `endHold(for:)` is what stops
+  the *other* key's release ending a session it didn't start.
+
+`CommandGuard` is the third guard in the app and is not either of the other two.
+`isPlausibleCleanup` rejects any word that wasn't spoken — but a rewrite is asked for new
+words. `PolishGuard` requires every digit and name to survive — but "summarise this" drops
+most of them legitimately. `CommandGuard` only asks that nothing was **invented**.
+
+---
+
 ## What isn't built
 
-1. **The whole Windows platform layer** — audio, hotkey, injection, UI.
-2. **Command Mode** — select text, hold a second key, "make this more formal."
-3. **Onboarding** — a first-run window walking through both macOS permissions.
-4. **Notarization** — signing works; notarization would end the Gatekeeper warning.
+1. **The whole Windows platform layer** — audio, hotkey, injection, UI. The C# side has no
+   `MurmurFormatting` equivalent yet, so the formatting vectors currently run on macOS only.
+2. **Onboarding** — a first-run window walking through both macOS permissions.
+3. **Notarization** — signing works; notarization would end the Gatekeeper warning.
 
 And one thing CI structurally cannot verify on either platform: **text injection into a
 foreground application.** GitHub runners have an interactive desktop but cannot take the

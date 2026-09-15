@@ -444,6 +444,10 @@ footer { padding: 54px 0 72px; border-top: 1px solid var(--line); background: va
       Push-to-talk dictation for macOS that runs <strong>entirely on your Mac</strong>.
       Cleaned-up text lands in whatever field has focus — and the overlay that shows
       you what you're saying <strong>never takes that focus away</strong>.
+      <br><br>
+      <strong>New in 0.3:</strong> select text, hold the <em>second</em> key, and say what
+      to do with it — <em>"make this more formal"</em>, <em>"bullet these"</em>. The
+      selection is replaced when you let go.
     </p>
     <div class="hero-cta reveal" style="--i:3">
       <a class="btn btn-lg btn-fill" href="https://github.com/rohitshidid/murmur/releases/latest/download/Murmur-arm64.dmg">
@@ -546,6 +550,11 @@ footer { padding: 54px 0 72px; border-top: 1px solid var(--line); background: va
         holding a key down for a long thought is the single thing that stops people
         dictating anything longer than a sentence.
       </p>
+      <p class="lede reveal" style="--i:3">
+        There's a <strong>second key</strong> for text that already exists. Select
+        something, hold it, and say what to do with it — the same gesture, pointed at
+        words on screen instead of words in your head.
+      </p>
     </div>
 
     <div class="cards">
@@ -605,19 +614,68 @@ footer { padding: 54px 0 72px; border-top: 1px solid var(--line); background: va
 
     <div class="feature flip reveal">
       <div class="feature-text">
+        <p class="eyebrow">Command mode</p>
+        <h3>Say what to do to the words already there.</h3>
+        <p>
+          Select some text, hold the <strong>second key</strong>, and say what you want done
+          to it — <em>"make this more formal"</em>, <em>"bullet these"</em>, <em>"put it on
+          one line"</em>. Let go and the selection is replaced. It is the same hold you
+          already know, pointed at text that exists instead of text you're about to write.
+        </p>
+        <p>
+          Two things do the work, and <strong>the overlay tells you which one did</strong>.
+          The exact instructions — caps, title case, bullets, numbering, one line, quotes,
+          spacing — are rules: instant, offline, and available on every Mac. Everything
+          open-ended goes to Apple's on-device model. The two are not equally predictable,
+          and you are watching your own text get replaced, so the app says which ran rather
+          than leaving you to guess.
+        </p>
+        <p>
+          It refuses more than it accepts. Nothing selected and it <strong>says so</strong>
+          instead of typing your instruction into the document. It will not invent a number
+          or a link that wasn't already there. And the selection is read when the key goes
+          down and checked again right before the swap — if it moved while you were talking,
+          nothing is replaced, because that is the one mistake with no undo.
+        </p>
+      </div>
+      <div class="panel">
+        <div class="panel-head">Selected text <span class="right">hold Right ⌥</span></div>
+        <div class="panel-body">
+          <p class="panel-lab">Selected</p>
+          <p class="panel-said">
+            hey so the deploy is broken again can you take a look when you get a sec
+          </p>
+          <p class="panel-lab" style="margin-top:16px">You said</p>
+          <p class="panel-said"><em>"make this more formal"</em></p>
+          <span class="arrow-down">↓</span>
+          <p class="panel-out"><b>The deploy is broken again. Could you take a look when you have a moment?</b></p>
+        </div>
+        <div class="panel-row" style="border-top:1px solid var(--line)"><span class="p">Rewritten · Apple Intelligence</span><span class="s">shown in the overlay</span></div>
+      </div>
+    </div>
+
+    <div class="feature reveal">
+      <div class="feature-text">
         <p class="eyebrow">Structure</p>
         <h3>It types the shape you spoke.</h3>
         <p>
           Say <em>"new paragraph"</em>, <em>"bullet point"</em>, <em>"number one"</em>,
-          <em>"all caps urgent"</em> — and get the thing, not the words. Read a list out
-          loud and it comes out as a list: <strong>"first, buy milk. second, call the
-          bank"</strong> lands numbered, in whatever marker style that app uses.
+          <em>"all caps urgent"</em>, <em>"open paren"</em> — and get the thing, not the
+          words, spaced the way a typist would space it: <code>(after lunch)</code>, not
+          <code>( after lunch )</code>. Read a list out loud and it comes out as a list,
+          in whatever marker style that app uses.
         </p>
         <p>
-          Inference is deliberately hard to trigger. A cue only counts at the start of a
-          clause, the sequence has to open at one and climb, and there have to be at least
-          two items — so <em>"the first thing I noticed"</em> stays a sentence. All three
-          rules exist to stop ordinary speech turning into bullet points.
+          It no longer needs you to pause. <strong>"first buy milk second call the bank"</strong>
+          — said in one breath, with no commas anywhere — comes out numbered, which is how
+          people actually read a list aloud.
+        </p>
+        <p>
+          Inference is still deliberately hard to trigger. The sequence has to open at one
+          and climb, there have to be at least two items, no item may begin with a
+          conjunction or a preposition, and no ordinal may be left stranded inside one. So
+          <em>"the first thing I noticed"</em>, <em>"my first car was a Civic"</em> and
+          <em>"he finished first and she finished second"</em> all stay sentences.
         </p>
         <p>
           None of this needs a model. It is rules, so it costs nothing, it is the same
@@ -631,16 +689,16 @@ footer { padding: 54px 0 72px; border-top: 1px solid var(--line); background: va
         <div class="panel-body">
           <p class="panel-lab">What you said</p>
           <p class="panel-said">
-            I need three things. First, buy milk. Second, call the bank. Third, book the flight.
+            I need three things first buy milk second call the bank third book the flight
           </p>
           <span class="arrow-down">↓</span>
           <p class="panel-out"><b>I need three things:<br>1. Buy milk<br>2. Call the bank<br>3. Book the flight</b></p>
         </div>
-        <div class="panel-row" style="border-top:1px solid var(--line)"><span class="p">56 vectors pin this behaviour</span><span class="s">rules, not a model</span></div>
+        <div class="panel-row" style="border-top:1px solid var(--line)"><span class="p">101 vectors pin this behaviour</span><span class="s">rules, not a model</span></div>
       </div>
     </div>
 
-    <div class="feature reveal">
+    <div class="feature flip reveal">
       <div class="feature-text">
         <p class="eyebrow">Retraction</p>
         <h3>Say "no wait" and mean it.</h3>
@@ -674,7 +732,7 @@ footer { padding: 54px 0 72px; border-top: 1px solid var(--line); background: va
       </div>
     </div>
 
-    <div class="feature flip reveal">
+    <div class="feature reveal">
       <div class="feature-text">
         <p class="eyebrow">Screen context</p>
         <h3>It can see what you're looking at.</h3>
@@ -706,7 +764,7 @@ footer { padding: 54px 0 72px; border-top: 1px solid var(--line); background: va
       </div>
     </div>
 
-    <div class="feature reveal">
+    <div class="feature flip reveal">
       <div class="feature-text">
         <p class="eyebrow">Field context</p>
         <h3>Which field, not just which app.</h3>
@@ -741,7 +799,7 @@ footer { padding: 54px 0 72px; border-top: 1px solid var(--line); background: va
       </div>
     </div>
 
-    <div class="feature flip reveal">
+    <div class="feature reveal">
       <div class="feature-text">
         <p class="eyebrow">Per-app tone</p>
         <h3>The same sentence, dressed for where it lands.</h3>
@@ -767,7 +825,7 @@ footer { padding: 54px 0 72px; border-top: 1px solid var(--line); background: va
       </div>
     </div>
 
-    <div class="feature reveal">
+    <div class="feature flip reveal">
       <div class="feature-text">
         <p class="eyebrow">Grammar repair</p>
         <h3>Optional, because it may change your words.</h3>
@@ -806,7 +864,7 @@ footer { padding: 54px 0 72px; border-top: 1px solid var(--line); background: va
       </div>
     </div>
 
-    <div class="feature flip reveal">
+    <div class="feature reveal">
       <div class="feature-text">
         <p class="eyebrow">Dictionary</p>
         <h3>A text file, not a database.</h3>
@@ -840,7 +898,7 @@ murmur you tube <span class="k">-&gt;</span> murmur-youtube
       </div>
     </div>
 
-    <div class="feature reveal">
+    <div class="feature flip reveal">
       <div class="feature-text">
         <p class="eyebrow">Meeting mode</p>
         <h3>Two tracks, so "you" is exact.</h3>
@@ -979,7 +1037,7 @@ murmur you tube <span class="k">-&gt;</span> murmur-youtube
       <div class="card reveal" style="--i:3">
         <div class="ico">📖</div>
         <h3>All of it is readable</h3>
-        <p>About 7,000 lines of Swift, all of it in the open. The dictionary is a plain text file in Application Support; history clears with <code>murmur://clear</code>.</p>
+        <p>About 11,000 lines of Swift, all of it in the open. The dictionary is a plain text file in Application Support; history clears with <code>murmur://clear</code>.</p>
       </div>
     </div>
   </div>
@@ -1015,7 +1073,7 @@ murmur you tube <span class="k">-&gt;</span> murmur-youtube
       <div class="step reveal" style="--i:3">
         <div>
           <h3>Hold <kbd>Right ⌘</kbd> and talk</h3>
-          <p>The microphone prompt appears on that first dictation. Prefer a different key, or strict hold-to-talk with no tap-to-lock? Both are in Settings.</p>
+          <p>The microphone prompt appears on that first dictation. For command mode, select some text and hold <kbd>Right ⌥</kbd> instead. Prefer different keys, or strict hold-to-talk with no tap-to-lock? All of it is in Settings.</p>
         </div>
       </div>
     </div>
@@ -1070,12 +1128,11 @@ murmur you tube <span class="k">-&gt;</span> murmur-youtube
     </div>
 
     <ul class="todo narrow" style="width:min(820px,100%)">
-      <li class="reveal"><b>Command Mode</b><span>Select text, hold a second key, say "make this more formal." Needs an Accessibility read of the selection plus a model round-trip.</span></li>
-      <li class="reveal" style="--i:1"><b>File transcription</b><span>Drop in an audio or video file and get a transcript. The engine protocol needs no changes — only a reader that yields chunks from a file instead of the microphone.</span></li>
-      <li class="reveal" style="--i:2"><b>Multilingual</b><span>The language is pinned at launch. Per-utterance choice and auto-detection aren't wired up.</span></li>
-      <li class="reveal" style="--i:3"><b>Onboarding</b><span>There is no first-run window. The permissions are granted from the menu instead.</span></li>
-      <li class="reveal" style="--i:4"><b>Signing &amp; notarization</b><span>What ends the re-granting described above, and the reason the first launch needs a right-click today.</span></li>
-      <li class="reveal" style="--i:5"><b>Windows</b><span>In the repo as a dictionary engine plus a specification — no audio, hotkey, injection or UI yet. The behaviour it has to match is already written down: both the correction vectors and the structure vectors live in the repo and run in CI. It is not a download.</span></li>
+      <li class="reveal"><b>File transcription</b><span>Drop in an audio or video file and get a transcript. The engine protocol needs no changes — only a reader that yields chunks from a file instead of the microphone.</span></li>
+      <li class="reveal" style="--i:1"><b>Multilingual</b><span>The language is pinned at launch. Per-utterance choice and auto-detection aren't wired up.</span></li>
+      <li class="reveal" style="--i:2"><b>Onboarding</b><span>There is no first-run window. The permissions are granted from the menu instead.</span></li>
+      <li class="reveal" style="--i:3"><b>Signing &amp; notarization</b><span>What ends the re-granting described above, and the reason the first launch needs a right-click today.</span></li>
+      <li class="reveal" style="--i:4"><b>Windows</b><span>In the repo as a dictionary engine plus a specification — no audio, hotkey, injection or UI yet. The behaviour it has to match is already written down: both the correction vectors and the structure vectors live in the repo and run in CI. It is not a download.</span></li>
     </ul>
   </div>
 </section>

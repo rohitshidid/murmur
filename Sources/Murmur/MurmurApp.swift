@@ -97,13 +97,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Shows and hides the HUD in step with the controller's state.
+    ///
+    /// Tracks the banner as well as the state, because a Command Mode result arrives *after*
+    /// the session that produced it has gone idle — "Rewritten with Apple Intelligence" has
+    /// nothing to say while the key is still down. Without the banner in the tracked set the
+    /// HUD dismisses on release and the user never sees what happened to their text.
     private func observeState() {
         withObservationTracking {
             _ = controller.state
+            _ = controller.banner
         } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
-                if self.controller.state.isActive {
+                if self.controller.state.isActive || self.controller.banner != nil {
                     self.hud?.present()
                 } else {
                     self.hud?.dismiss()
@@ -198,6 +204,10 @@ private struct MenuContent: View {
         Divider()
 
         microphonePicker
+
+        if settings.commandModeIsUsable {
+            Text("Hold \(settings.commandKey.displayName) over selected text to change it")
+        }
 
         Picker("Push-to-talk key", selection: Binding(
             get: { settings.pushToTalkKey },

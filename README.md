@@ -248,12 +248,17 @@ change.
 ## Writing, not just transcribing
 
 **Spoken structure.** "New paragraph", "bullet point", "next item", "number one", "all caps
-urgent". Rules, so they cost nothing and work with cleanup switched off.
+urgent", "open paren", "question mark". Rules, so they cost nothing and work with cleanup
+switched off — including the spacing, which is why you get `(after lunch)` and `right one?`
+rather than `( after lunch )` and `right one ?`.
 
-**Lists you read out.** "First, buy milk. Second, call the bank" becomes a numbered list —
-and only when a cue sits at a clause boundary, the sequence starts at one, and there are at
-least two items, so "the first thing I noticed" stays a sentence. Each app chooses its
-marker.
+**Lists you read out.** "First, buy milk. Second, call the bank" becomes a numbered list, and
+so does "first buy milk second call the bank" — said in one breath, with no punctuation for
+the pass to anchor to, which is how people actually say it. The inference stays honest the
+same way it always did: the sequence has to start at one and climb, there have to be at least
+two items, and an ordinal that is doing ordinary work in a sentence is left alone. "The first
+thing I noticed", "my first car was a Civic", "he finished first and she finished second" are
+all still sentences. Each app chooses its marker.
 
 **Taking it back.** "I'll send it next week. Actually no, scratch that. I'll send it today."
 types only the last sentence. And when only a value changed, only the value changes: "I want
@@ -276,6 +281,20 @@ them moved, the result is thrown away and the plain cleanup is used instead. Onc
 applies in every app until you switch it off for one in **Tone by app** — including code
 editors, because that is also where commit messages and release notes get written.
 
+**Command mode.** Select some text, hold a second key, and say what to do with it — "make
+this more formal", "bullet these", "put it on one line". Let go and the selection is replaced.
+
+Two things do the work, in this order. The exact instructions — caps, lowercase, title case,
+bullets, numbering, one line, quotes, spacing, a trailing full stop — are rules, so they are
+instant, offline, and available on every Mac. Everything open-ended goes to Apple's on-device
+model. **The HUD says which one ran**, because the two are not equally trustworthy and you
+are watching your own text get replaced.
+
+What it will not do: act with nothing selected (it says so instead of typing the instruction
+into your document), invent a number or a link that was not already there, or replace a
+selection that moved while you were talking — the selection is read when the key goes down
+and confirmed again immediately before the text is swapped.
+
 ## Beyond dictation
 
 **Meeting mode.** A second capture path records your microphone and the Mac's own audio as
@@ -293,16 +312,14 @@ what the feature is for.
 
 ## Not built yet
 
-1. **Command Mode.** Select text, hold a second hotkey, say "make this more formal."
-   Needs AX read of `kAXSelectedTextAttribute` plus an LLM round-trip.
-2. **File transcription.** Drop an audio or video file and get a transcript. The engine
+1. **File transcription.** Drop an audio or video file and get a transcript. The engine
    protocol needs no changes — only a reader that yields `AudioChunk`s from `AVAssetReader`
    instead of `AVAudioEngine`.
-3. **Multilingual.** `AppleSpeechEngine` pins `Locale.current` at init; per-utterance
+2. **Multilingual.** `AppleSpeechEngine` pins `Locale.current` at init; per-utterance
    language choice and auto-detection are not wired up.
-4. **Onboarding.** A first-run window that walks through the permissions instead of
+3. **Onboarding.** A first-run window that walks through the permissions instead of
    relying on the menu's "Grant…" items.
-5. **Developer ID signing + notarization.** Ends the TCC-reset churn and makes the app
+4. **Developer ID signing + notarization.** Ends the TCC-reset churn and makes the app
    distributable. Without a cert the `Makefile` falls back to ad-hoc signing, and **every
    rebuild invalidates the Accessibility grant** — see below.
 

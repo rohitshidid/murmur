@@ -40,7 +40,30 @@ final class DictationController {
         }
     }
 
+    /// What the current hold is for.
+    ///
+    /// Both modes record through the same capture, engine and HUD — the only thing that
+    /// differs is what happens to the words on release. Dictation types them; Command Mode
+    /// reads them as an instruction and applies it to text the user had already selected.
+    enum Mode: Equatable {
+        case dictation
+        case command
+    }
+
+    /// A short line the HUD shows after a hold ends: what was done, or why nothing was.
+    ///
+    /// Separate from `state` on purpose. A notice has to outlive the session that produced
+    /// it — the user is reading it after the key is up — but it must not make the controller
+    /// look busy, because `beginDictation` refuses to start while anything is active. Held
+    /// as its own value, the HUD can linger for two seconds without blocking the next hold.
+    struct Banner: Equatable {
+        let text: String
+        let isError: Bool
+    }
+
     private(set) var state: State = .idle
+    private(set) var mode: Mode = .dictation
+    private(set) var banner: Banner?
     /// Live transcript, updated as the engine revises it. Drives the HUD.
     private(set) var transcript = ""
     /// Smoothed 0…1 mic level for the waveform.
@@ -57,7 +80,12 @@ final class DictationController {
     /// broken app rather than an ungranted one.
     private(set) var isHotkeyArmed = false
 
+    /// Whether the Command Mode tap is installed. False whenever the feature is switched
+    /// off, bound to the dictation key, or the tap itself failed.
+    private(set) var isCommandKeyArmed = false
+
     private let hotkey = HotkeyMonitor()
+    private let commandHotkey = HotkeyMonitor()
     private let shortcuts = ShortcutMonitor()
     private let capture = AudioCapture()
     private let makeEngine: @Sendable () -> any TranscriptionEngine
@@ -93,6 +121,14 @@ final class DictationController {
     private var feedTask: Task<Void, Never>?
     private var audioContinuation: AsyncStream<AudioChunk>.Continuation?
 
+    /// The text that was highlighted when the command key went down.
+    ///
+    /// Captured at key-down and confirmed again immediately before injection. The gap
+    /// between them is seconds long — transcription plus a model call — and a selection does
+    /// not reliably survive that.
+    private var commandSelection: String?
+    private var bannerTask: Task<Void, Never>?
+
     /// Timestamps for the history list: when the key went down, and when it came up.
     private var holdStarted: Date?
     private var releasedAt: Date?
@@ -109,8 +145,6 @@ final class DictationController {
 
     // MARK: - Lifecycle
 
-    /// - Returns: `false` if the hotkey tap couldn't be installed (missing Accessibility).
-    @discardableResult
     /// Ends the current utterance when the audio hardware changes mid-recording.
     ///
     /// Capture is already gone by the time this runs; this exists so the state machine and
@@ -159,6 +193,12 @@ final class DictationController {
         }
     }
 
+    /// Installs both event taps.
+    ///
+    /// - Returns: `false` if the push-to-talk tap couldn't be installed (missing
+    ///   Accessibility). Command Mode's tap is reported separately in `isCommandKeyArmed`,
+    ///   because it can legitimately be off while dictation works fine.
+    @discardableResult
     func activate() -> Bool {
         hotkey.key = Settings.shared.pushToTalkKey
         hotkey.latchOnTap = Settings.shared.latchOnTap
@@ -170,10 +210,22 @@ final class DictationController {
             MainActor.assumeIsolated { self?.beginDictation() }
         }
         hotkey.onRelease = { [weak self] in
-            MainActor.assumeIsolated { self?.endDictation() }
+            MainActor.assumeIsolated { self?.endHold(for: .dictation) }
         }
         hotkey.onLatchChange = { [weak self] latched in
             MainActor.assumeIsolated { self?.isLatched = latched }
+        }
+
+        // Command Mode's own tap. Same delivery contract as the one above — `HotkeyMonitor`
+        // hands both of these over on `DispatchQueue.main` — and deliberately never latched:
+        // a latched command key would sit holding a selection that has long since moved on.
+        commandHotkey.key = Settings.shared.commandKey
+        commandHotkey.latchOnTap = false
+        commandHotkey.onPress = { [weak self] in
+            MainActor.assumeIsolated { self?.beginCommand() }
+        }
+        commandHotkey.onRelease = { [weak self] in
+            MainActor.assumeIsolated { self?.endHold(for: .command) }
         }
 
         shortcuts.onUndo = { MainActor.assumeIsolated { TextInjector.undoLast() } }
@@ -186,12 +238,28 @@ final class DictationController {
         shortcuts.start()
 
         isHotkeyArmed = hotkey.start()
+
+        // Refused rather than merely discouraged when the two keys collide: both taps would
+        // fire on the same press, in an unspecified order, and the second session would be
+        // dropped by the `.idle` guard with nothing on screen saying why.
+        commandHotkey.stop()
+        if Settings.shared.commandModeIsUsable {
+            isCommandKeyArmed = commandHotkey.start()
+        } else {
+            isCommandKeyArmed = false
+            if Settings.shared.commandModeEnabled {
+                Log.hotkey.error("command mode is bound to the push-to-talk key — not armed")
+            }
+        }
+
         return isHotkeyArmed
     }
 
     func deactivate() {
         isHotkeyArmed = false
+        isCommandKeyArmed = false
         hotkey.stop()
+        commandHotkey.stop()
         shortcuts.stop()
         cancelDictation()
     }
@@ -200,6 +268,7 @@ final class DictationController {
     @discardableResult
     func reloadHotkey() -> Bool {
         hotkey.stop()
+        commandHotkey.stop()
         shortcuts.stop()
         return activate()
     }
@@ -210,6 +279,10 @@ final class DictationController {
     ///
     func startButtonRecording() {
         guard case .idle = state else { return }
+        // The button is always ordinary dictation, whatever the last hold was for.
+        mode = .dictation
+        commandSelection = nil
+        clearBanner()
         beginDictation()
     }
 
@@ -219,10 +292,119 @@ final class DictationController {
         endDictation()
     }
 
+    // MARK: - Command Mode
+
+    /// Ends a hold only if it is the one that started the session in progress.
+    ///
+    /// Two keys can now be held, and only one session can exist. Press push-to-talk, then
+    /// tap the command key while still talking: the command key's press is refused by the
+    /// idle guard, but its *release* used to end the dictation mid-sentence — the key that
+    /// did nothing on the way down cut the utterance short on the way up. Whichever mode the
+    /// live session belongs to is the only key allowed to finish it.
+    private func endHold(for mode: Mode) {
+        guard self.mode == mode else { return }
+        endDictation()
+    }
+
+    /// Starts a hold that will act on the selected text rather than type new text.
+    ///
+    /// The selection is read **here**, at key-down, and that is the whole design. "Make this
+    /// more formal" is a sentence with an object, and the object is whatever was highlighted
+    /// when the user reached for the key — not whatever is highlighted several seconds later,
+    /// after they have finished talking and a model has finished thinking. Reading it late
+    /// would mean occasionally rewriting something the user never pointed at.
+    ///
+    /// Nothing selected is a refusal with a reason, never a silent no-op. The alternative —
+    /// falling through to ordinary dictation — types "rephrase this more formally" into the
+    /// document, which is the one outcome nobody would ever want.
+    private func beginCommand() {
+        guard case .idle = state else { return }
+
+        switch SelectionReader.read() {
+        case .success(let selection):
+            commandSelection = selection
+            mode = .command
+            clearBanner()
+            beginDictation()
+        case .failure(let reason):
+            Log.speech.info("command mode: \(String(describing: reason), privacy: .public)")
+            show(reason.message, isError: true)
+        }
+    }
+
+    /// Applies the spoken instruction to the captured selection.
+    private func finishCommand(instruction: String) async {
+        defer {
+            mode = .dictation
+            commandSelection = nil
+            state = .idle
+            transcript = ""
+        }
+
+        guard let selection = commandSelection else {
+            show("Nothing selected — highlight some text first", isError: true)
+            return
+        }
+
+        let context = FormatContext.current()
+        do {
+            let outcome = try await CommandTransformer().transform(
+                selection: selection,
+                instruction: instruction,
+                context: context
+            )
+
+            // The last gate before the user's text is replaced. Everything between the key
+            // going down and this line is asynchronous, and any of it gives them time to
+            // click elsewhere — at which point `TextInjector` would overwrite a different
+            // selection with a rewrite of the old one, losing text that has no undo.
+            guard SelectionReader.stillHolds(selection) else {
+                Log.speech.info("command mode: selection moved before injection — nothing replaced")
+                show("Selection changed — nothing was replaced", isError: true)
+                return
+            }
+
+            recordRun(text: outcome.text)
+            TextInjector.insert(outcome.text)
+            if Settings.shared.soundEnabled { NSSound(named: "Pop")?.play() }
+            show(outcome.attribution)
+            Log.speech.info("command · \(outcome.attribution, privacy: .public)")
+        } catch {
+            let message = error.errorDescription ?? "Rewrite failed"
+            Log.speech.info("command failed: \(message, privacy: .public)")
+            show(message, isError: true)
+        }
+    }
+
+    // MARK: - Banner
+
+    /// How long a notice stays on screen after the key comes up.
+    ///
+    /// Long enough to read "Rewritten with Apple Intelligence" without being long enough to
+    /// still be there when the next thought arrives.
+    private static let bannerDuration: Duration = .seconds(2.4)
+
+    private func show(_ text: String, isError: Bool = false) {
+        bannerTask?.cancel()
+        banner = Banner(text: text, isError: isError)
+        bannerTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: Self.bannerDuration)
+            guard !Task.isCancelled else { return }
+            self?.banner = nil
+        }
+    }
+
+    private func clearBanner() {
+        bannerTask?.cancel()
+        bannerTask = nil
+        banner = nil
+    }
+
     // MARK: - Dictation
 
     private func beginDictation() {
         guard case .idle = state else { return }
+        clearBanner()
         state = .starting
         transcript = ""
         holdStarted = Date()
@@ -311,18 +493,27 @@ final class DictationController {
         // Both Accessibility reads are kicked off here, not where their results are used, so
         // they overlap transcription and cleanup instead of adding to the wait. The pid is
         // read on this actor; neither read may touch AppKit.
+        //
+        // Neither runs in Command Mode. They exist to shape text being *typed* — which field
+        // it lands in, what is above the caret, what words are on screen — and Command Mode
+        // types nothing new: it replaces a selection the user already made. Running them
+        // would be two Accessibility walks bought for nothing, in front of a model call the
+        // user is already waiting on.
+        let isCommand = mode == .command
         let frontmost = NSWorkspace.shared.frontmostApplication
         let pid = frontmost?.processIdentifier
         let bundleID = frontmost?.bundleIdentifier
 
-        let screenTask: Task<[(hear: String, write: String)], Never>? = Settings.shared.screenContext
+        let screenTask: Task<[(hear: String, write: String)], Never>? =
+            !isCommand && Settings.shared.screenContext
             ? Task.detached(priority: .userInitiated) {
                 guard let pid else { return [] }
                 return ScreenVocabulary.pairs(from: ScreenHarvester.visibleText(pid: pid))
             }
             : nil
 
-        let fieldTask: Task<FieldSnapshot, Never>? = Settings.shared.fieldContext
+        let fieldTask: Task<FieldSnapshot, Never>? =
+            !isCommand && Settings.shared.fieldContext
             ? Task.detached(priority: .userInitiated) {
                 guard let pid else { return .unknown }
                 return FieldHarvester.snapshot(pid: pid, bundleID: bundleID)
@@ -345,8 +536,21 @@ final class DictationController {
 
             let raw = transcript
             guard !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                if isCommand { show("Didn\u{2019}t catch an instruction", isError: true) }
+                mode = .dictation
+                commandSelection = nil
                 state = .idle
                 transcript = ""
+                return
+            }
+
+            // Command Mode leaves the pipeline here. Everything below shapes a transcript
+            // into text for a field — cleanup, lists, email shape, the dictionary — and none
+            // of it applies to a sentence that is an instruction rather than content. Running
+            // the dictionary over "make this more formal" would correct words in a string
+            // nobody will ever read.
+            if isCommand {
+                await finishCommand(instruction: raw)
                 return
             }
 
@@ -413,7 +617,10 @@ final class DictationController {
 
     private func cancelDictation() {
         hotkey.clearLatch()
+        commandHotkey.clearLatch()
         isLatched = false
+        mode = .dictation
+        commandSelection = nil
         capture.stop()
         audioContinuation?.finish()
         audioContinuation = nil
@@ -432,6 +639,8 @@ final class DictationController {
     }
 
     private func teardown() async {
+        mode = .dictation
+        commandSelection = nil
         capture.stop()
         audioContinuation?.finish()
         audioContinuation = nil
@@ -534,7 +743,10 @@ final class DictationController {
     private func fail(_ message: String) {
         Log.app.error("\(message)")
         hotkey.clearLatch()
+        commandHotkey.clearLatch()
         isLatched = false
+        mode = .dictation
+        commandSelection = nil
         capture.stop()
         audioContinuation?.finish()
         audioContinuation = nil

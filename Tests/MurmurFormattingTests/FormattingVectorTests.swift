@@ -13,6 +13,8 @@ struct FormattingVectorTests {
         let version: Int
         let cases: [Case]
         let polishGuardCases: [GuardCase]
+        let commandVerbCases: [VerbCase]
+        let commandGuardCases: [CommandGuardCase]
     }
 
     struct Case: Decodable {
@@ -32,6 +34,22 @@ struct FormattingVectorTests {
         let name: String
         let original: String
         let polished: String
+        let accepted: Bool
+    }
+
+    /// `expected` is null when the instruction isn't one of the model-free verbs.
+    struct VerbCase: Decodable {
+        let name: String
+        let instruction: String
+        let selection: String
+        let expected: String?
+    }
+
+    struct CommandGuardCase: Decodable {
+        let name: String
+        let original: String
+        let rewritten: String
+        let instruction: String
         let accepted: Bool
     }
 
@@ -100,6 +118,42 @@ struct FormattingVectorTests {
     func polishGuard() throws {
         for testCase in try Self.load().polishGuardCases {
             let verdict = PolishGuard.check(original: testCase.original, polished: testCase.polished)
+            #expect(
+                verdict.isAcceptable == testCase.accepted,
+                """
+                \(testCase.name)
+                  expected accepted: \(testCase.accepted)
+                  actual:            \(verdict.isAcceptable) — \(verdict.reason ?? "accepted")
+                """
+            )
+        }
+    }
+
+    @Test("Command Mode's model-free verbs do exactly what they say")
+    func commandVerbs() throws {
+        for testCase in try Self.load().commandVerbCases {
+            let actual = CommandVerbs.apply(testCase.instruction, to: testCase.selection)?.text
+            #expect(
+                actual == testCase.expected,
+                """
+                \(testCase.name)
+                  instruction: \(testCase.instruction.debugDescription)
+                  selection:   \(testCase.selection.debugDescription)
+                  expected:    \(testCase.expected.debugDescription)
+                  actual:      \(actual.debugDescription)
+                """
+            )
+        }
+    }
+
+    @Test("the command guard allows a rewrite but never an invention")
+    func commandGuard() throws {
+        for testCase in try Self.load().commandGuardCases {
+            let verdict = CommandGuard.check(
+                original: testCase.original,
+                rewritten: testCase.rewritten,
+                instruction: testCase.instruction
+            )
             #expect(
                 verdict.isAcceptable == testCase.accepted,
                 """

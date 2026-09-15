@@ -65,11 +65,17 @@ enum FieldHarvester {
         ].compactMap { $0 }.first
         let host = AppFamily.isBrowser(bundleID: bundleID) ? host(from: element) : nil
 
+        // A password field's contents are never read, not even to decide how to punctuate.
+        // The caret text exists so a new utterance can join the sentence in front of it, and
+        // there is no sentence in front of a password — only a secret, which would then
+        // travel into `StructureOptions` and sit in memory for the length of an utterance
+        // for no benefit at all.
+        let isSecure = subrole == "AXSecureTextField"
         let snapshot = FieldSnapshot(
             kind: classify(role: role, subrole: subrole, label: label, host: host, bundleID: bundleID),
             label: label,
             host: host,
-            textBeforeCaret: textBeforeCaret(element)
+            textBeforeCaret: isSecure ? "" : textBeforeCaret(element)
         )
         Log.speech.info("field: \(snapshot.kind.rawValue, privacy: .public), \(snapshot.textBeforeCaret.count, privacy: .public) char(s) before caret")
         return snapshot

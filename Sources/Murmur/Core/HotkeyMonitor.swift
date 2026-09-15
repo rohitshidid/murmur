@@ -7,12 +7,14 @@ enum PushToTalkKey: String, CaseIterable, Sendable {
     case rightOption
     case fn
     case rightCommand
+    case rightControl
 
     var keyCode: Int64 {
         switch self {
         case .rightOption: Int64(kVK_RightOption)   // 61
         case .fn: Int64(kVK_Function)               // 63
         case .rightCommand: Int64(kVK_RightCommand) // 54
+        case .rightControl: Int64(kVK_RightControl) // 62
         }
     }
 
@@ -27,9 +29,10 @@ enum PushToTalkKey: String, CaseIterable, Sendable {
     /// left/right distinction that the public `CGEventFlags` constants discard.
     var flag: CGEventFlags {
         switch self {
-        case .rightOption: CGEventFlags(rawValue: 0x40)   // NX_DEVICERALTKEYMASK
-        case .rightCommand: CGEventFlags(rawValue: 0x10)  // NX_DEVICERCMDKEYMASK
-        case .fn: .maskSecondaryFn                        // no left/right variant exists
+        case .rightOption: CGEventFlags(rawValue: 0x40)    // NX_DEVICERALTKEYMASK
+        case .rightCommand: CGEventFlags(rawValue: 0x10)   // NX_DEVICERCMDKEYMASK
+        case .rightControl: CGEventFlags(rawValue: 0x2000) // NX_DEVICERCTLKEYMASK
+        case .fn: .maskSecondaryFn                         // no left/right variant exists
         }
     }
 
@@ -38,6 +41,7 @@ enum PushToTalkKey: String, CaseIterable, Sendable {
         case .rightOption: "Right ⌥"
         case .fn: "fn"
         case .rightCommand: "Right ⌘"
+        case .rightControl: "Right ⌃"
         }
     }
 
@@ -47,6 +51,12 @@ enum PushToTalkKey: String, CaseIterable, Sendable {
 }
 
 /// Watches for a held modifier key using a `CGEventTap`.
+///
+/// Two of these run at once — one for dictation, one for Command Mode — and that is safe
+/// because each callback ignores every key code but its own. What is *not* safe is letting
+/// both watch the same key: the taps fire in an unspecified order, both would start a
+/// session, and the second would be swallowed by the `.idle` guard with nothing on screen
+/// saying why. `DictationController` refuses to arm the command tap in that case.
 ///
 /// A tap is required rather than `NSEvent.addGlobalMonitor` because `fn` and left/right
 /// modifier discrimination don't surface through the higher-level APIs. This needs

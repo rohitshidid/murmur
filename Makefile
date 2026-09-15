@@ -8,6 +8,24 @@ CONFIG   := debug
 ## the build" on random object files, and occasionally a wedged swift-frontend stuck at
 ## 0% CPU. Moving the scratch path to ~/Library/Caches (never synced) removes the race.
 SCRATCH  := $(HOME)/Library/Caches/MurmurBuild/scratch
+
+## Pin the SDK when there is no Xcode, or nothing SwiftUI will compile.
+##
+## The macOS 27 SDK turned SwiftUI's `@State` (and friends) into macros, and the plugin
+## that expands them — SwiftUIMacros — ships inside Xcode, not the Command Line Tools. So
+## on a CLT-only machine every SwiftUI file fails with "plugin for module 'SwiftUIMacros'
+## not found", hundreds of times, and the app cannot be built at all. Nothing in this repo
+## changed; the September CLT update repointed MacOSX.sdk at 27.0 and the build stopped.
+##
+## The 26.x SDK is still on disk and declares those as plain property wrappers, needing no
+## plugin. Applied *only* when Xcode isn't selected — with a real Xcode the current SDK is
+## the right one and this must not override it.
+ifeq ($(shell xcode-select -p 2>/dev/null),/Library/Developer/CommandLineTools)
+SDK_FALLBACK := $(shell ls -d /Library/Developer/CommandLineTools/SDKs/MacOSX26*.sdk 2>/dev/null | tail -1)
+ifneq ($(strip $(SDK_FALLBACK)),)
+export SDKROOT := $(SDK_FALLBACK)
+endif
+endif
 BUILD    := $(SCRATCH)/$(CONFIG)/$(EXEC)
 
 ## The bundle is assembled and signed OUTSIDE this directory on purpose.

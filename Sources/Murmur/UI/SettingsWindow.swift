@@ -129,17 +129,88 @@ struct SettingsWindow: View {
                     + "transcript and discarded.")
             }
 
+            panel(label: "Command mode") {
+                Toggle(isOn: $settings.commandModeEnabled) {
+                    Silkscreen(text: "Act on selected text")
+                }
+                .toggleStyle(.switch)
+                .onChange(of: settings.commandModeEnabled) { _, _ in controller.reloadHotkey() }
+                note("Select some text, hold the key below, and say what to do with it — "
+                    + "\u{201C}make this more formal\u{201D}, \u{201C}bullet these\u{201D}, "
+                    + "\u{201C}put it on one line\u{201D}. The selection is replaced when you "
+                    + "let go, and the HUD says what did the work.")
+
+                HStack(spacing: DS.Space.snug) {
+                    ForEach(PushToTalkKey.allCases, id: \.self) { key in
+                        TransportKey(
+                            title: key.displayName,
+                            isEngaged: settings.commandKey == key,
+                            engagedColor: DS.Color.ink
+                        ) {
+                            settings.commandKey = key
+                            controller.reloadHotkey()
+                        }
+                        .background {
+                            if settings.commandKey == key {
+                                RoundedRectangle(cornerRadius: DS.Radius.control)
+                                    .fill(DS.Color.selection)
+                            }
+                        }
+                        // The two keys cannot be the same one: both taps would fire on the
+                        // same press and one session would vanish with nothing to show for it.
+                        .disabled(key == settings.pushToTalkKey)
+                        .opacity(key == settings.pushToTalkKey ? 0.35 : 1)
+                    }
+                }
+                .disabled(!settings.commandModeEnabled)
+
+                if settings.commandModeEnabled, !settings.commandModeIsUsable {
+                    note("Pick a key other than \(settings.pushToTalkKey.displayName) — "
+                        + "that one is already dictating.")
+                }
+
+                if !FoundationModelFormatter.isAvailable {
+                    note("Without Apple Intelligence, command mode still does the exact "
+                        + "instructions — caps, lists, one line, quotes, spacing. "
+                        + "Anything open-ended needs the on-device model.")
+                }
+            }
+
             panel(label: "Structure") {
                 HStack(spacing: DS.Space.snug) {
                     TransportKey(title: "Structure\u{2026}") { isEditingStructure = true }
                     Spacer()
                 }
                 note("Spoken commands, lists, email greetings and sign-offs, and taking "
-                    + "back what you retract. Rules, not a model \u{2014} they work with "
+                    + "back what you retract. Rules, not a model — they work with "
                     + "cleanup switched off.")
             }
 
+            versionFooter
         }
+    }
+
+    /// Which build is actually running.
+    ///
+    /// Read from the bundle rather than written down anywhere in Swift, because
+    /// `Resources/Info.plist` is the single source of truth for the version — a second copy
+    /// in code is how a build ends up reporting a version it isn't. Two numbers, not one:
+    /// the marketing version is what a release is called, and the build number is what tells
+    /// two builds of the same version apart, which is the whole question when you have just
+    /// reinstalled and want to know whether it took.
+    private var versionFooter: some View {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "—"
+        let build = info?["CFBundleVersion"] as? String ?? "—"
+        return HStack {
+            Spacer()
+            Text("Murmur \(version) (build \(build))")
+                .font(DS.Font.label)
+                .foregroundStyle(DS.Color.inkSecondary)
+                .textSelection(.enabled)
+            Spacer()
+        }
+        .padding(.top, DS.Space.snug)
     }
 
     private func panel<Content: View>(

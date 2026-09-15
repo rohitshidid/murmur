@@ -44,14 +44,44 @@ struct HUDView: View {
 
     var body: some View {
         HStack(spacing: DS.Space.base) {
-            Waveform(level: controller.level, isActive: controller.state == .listening)
-                .frame(width: 46, height: 14)
+            // A banner is what the HUD shows *after* a hold — the result of a Command Mode
+            // rewrite, or why there wasn't one. There is no audio behind it, so the meter is
+            // replaced by an icon rather than left twitching at a level that is always zero.
+            if let banner = controller.banner, !controller.state.isActive {
+                Image(systemName: banner.isError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(banner.isError ? DS.Color.meterRed : Brand.accent)
+                    .frame(width: 46, height: 14)
+            } else {
+                Waveform(level: controller.level, isActive: controller.state == .listening)
+                    .frame(width: 46, height: 14)
+            }
+
+            // Command Mode records through the same capture and HUD as dictation, and the
+            // two do completely different things to the text. Saying which one is holding
+            // the mic open is the only thing on screen that tells them apart.
+            if controller.mode == .command, controller.state.isActive {
+                Text("Command")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Brand.accent)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background {
+                        Capsule().fill(Brand.accent.opacity(0.14))
+                    }
+                    .transition(.scale.combined(with: .opacity))
+            }
 
             Text(label)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(isError ? DS.Color.meterRed : .primary.opacity(0.9))
+                .animation(.easeOut(duration: 0.12), value: controller.banner)
                 .lineLimit(1)
-                .truncationMode(.head)
+                // Head truncation is right for a live transcript — the newest words are the
+                // ones being watched. It is wrong for a banner, where the whole line is the
+                // message, so a banner shrinks to fit instead of losing its front.
+                .truncationMode(showingBanner ? .tail : .head)
+                .minimumScaleFactor(showingBanner ? 0.72 : 1)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .animation(.easeOut(duration: 0.12), value: controller.transcript)
 
@@ -66,6 +96,7 @@ struct HUDView: View {
             }
         }
         .animation(DS.Motion.panel, value: controller.isLatched)
+        .animation(DS.Motion.panel, value: controller.mode)
         .padding(.horizontal, DS.Space.roomy)
         .frame(width: Self.capsule.width, height: Self.capsule.height)
         .background {
@@ -85,20 +116,42 @@ struct HUDView: View {
         .frame(width: Self.size.width, height: Self.size.height)
     }
 
+    /// Whether the pill is showing the result of a finished hold rather than a live one.
+    private var showingBanner: Bool {
+        controller.banner != nil && !controller.state.isActive
+    }
+
     private var isError: Bool {
         if case .error = controller.state { return true }
+        if let banner = controller.banner, showingBanner { return banner.isError }
         return false
     }
 
+    /// What a hold that hasn't produced words yet should say it is doing.
+    ///
+    /// Different in Command Mode because the two are waiting for different things. Dictation
+    /// is waiting for words to type; Command Mode already has the text and is waiting to be
+    /// told what to do with it, which is a question rather than an invitation.
+    private var prompt: String {
+        controller.mode == .command ? "What should I do with it?" : "Listening…"
+    }
+
     private var label: String {
+        // The banner outlives the session that produced it, so it wins only once that
+        // session is over — a rewrite that lands while the next hold has already started
+        // must not overwrite what that hold is showing.
+        if let banner = controller.banner, !controller.state.isActive { return banner.text }
+
         switch controller.state {
-        case .starting: "Listening…"
-        case .listening: controller.transcript.isEmpty ? "Listening…" : controller.transcript
+        case .starting: return prompt
+        case .listening: return controller.transcript.isEmpty ? prompt : controller.transcript
         // Parakeet transcribes in one pass on release, so there's nothing to show until
         // it lands — say what's happening instead of leaving an empty pill.
-        case .finishing: controller.transcript.isEmpty ? "Transcribing…" : controller.transcript
-        case .error(let message): message
-        case .idle: ""
+        case .finishing:
+            if controller.mode == .command { return "Rewriting…" }
+            return controller.transcript.isEmpty ? "Transcribing…" : controller.transcript
+        case .error(let message): return message
+        case .idle: return ""
         }
     }
 }

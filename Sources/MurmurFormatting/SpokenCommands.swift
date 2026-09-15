@@ -24,7 +24,7 @@ public enum SpokenCommands {
         (["em dash"], " \u{2014} "),
         (["ellipsis", "dot dot dot"], "\u{2026} "),
         (["percent sign"], "% "),
-        (["at sign"], " @ "),
+        (["at sign"], "@"),
     ]
 
     /// The four spoken punctuation rules that predate this module, kept as their own list so
@@ -79,6 +79,7 @@ public enum SpokenCommands {
         result = Rx.replacing("[ \\t]*\\n[ \\t]*", in: result, with: "\n")
         result = Rx.replacing("\\n{3,}", in: result, with: "\n\n")
         result = Rx.replacing("[ \\t]{2,}", in: result, with: " ")
+        result = closeUpPunctuation(result)
 
         // A newline in a single-line field is a submit, not a line break — it sends the
         // half-written message. Everything above is still worth running there; only the
@@ -87,6 +88,30 @@ public enum SpokenCommands {
             result = Rx.replacing("\\s*\\n+\\s*", in: result, with: " ")
         }
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Closes the gap a spoken punctuation command leaves behind.
+    ///
+    /// Every replacement above is written with its own padding, because each one has to read
+    /// correctly wherever it lands — but the phrase the speaker said was a *word*, with a
+    /// space in front of it, and nothing consumes that space. So "the right one question
+    /// mark" became `the right one ?` and "open paren after lunch close paren" became
+    /// `( after lunch )`.
+    ///
+    /// It is tidied here rather than left to the cleanup pass for the reason everything else
+    /// in this module is: cleanup is optional and the rule-based fallback only ever fixed the
+    /// sentence-final marks, so the brackets and quotes stayed wrong in every configuration.
+    ///
+    /// The em dash is deliberately absent from both sets — it is the one mark that wants a
+    /// space on each side.
+    private static func closeUpPunctuation(_ text: String) -> String {
+        var result = text
+        // No space in front of a mark that closes.
+        result = Rx.replacing("[ \\t]+(?=[,.;:!?%)\\]}\u{2026}\u{201D}])", in: result, with: "")
+        // No space after a mark that opens. The at sign is here and not above on purpose:
+        // "at sign murmur" is a handle, and a handle wants the space in front of it kept.
+        result = Rx.replacing("(?<=[(\\[{\u{201C}@])[ \\t]+", in: result, with: "")
+        return result
     }
 
     // MARK: - List items

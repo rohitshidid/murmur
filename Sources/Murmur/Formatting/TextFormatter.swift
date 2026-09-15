@@ -77,10 +77,28 @@ struct RuleBasedFormatter: TextFormatter {
         return result
     }
 
+    /// The spacing rules, in the order they have to run.
+    ///
+    /// The two additions to the obvious pair are not redundant. `applySpokenPunctuation`
+    /// above substitutes padded replacements — "new paragraph" becomes a break with the
+    /// speaker's spaces still on either side — so without the newline rule a paragraph break
+    /// arrives with a stray space closing the line above and opening the one below. And the
+    /// closing-mark rule covers brackets and quotes as well as sentence marks, because those
+    /// are the ones a spoken command produces: `( after lunch )` is what you get otherwise.
     private func collapseWhitespace(in text: String) -> String {
         text
             .replacingOccurrences(of: "[ \\t]+", with: " ", options: .regularExpression)
-            .replacingOccurrences(of: " +([,.!?;:])", with: "$1", options: .regularExpression)
+            .replacingOccurrences(of: "[ \\t]*\\n[ \\t]*", with: "\n", options: .regularExpression)
+            .replacingOccurrences(
+                of: " +([,.!?;:%)\\]}\u{2026}\u{201D}])",
+                with: "$1",
+                options: .regularExpression
+            )
+            .replacingOccurrences(
+                of: "([(\\[{\u{201C}]) +",
+                with: "$1",
+                options: .regularExpression
+            )
             .replacingOccurrences(of: "\\n{3,}", with: "\n\n", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }

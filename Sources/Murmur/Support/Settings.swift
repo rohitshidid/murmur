@@ -135,6 +135,32 @@ final class Settings {
         return [trimmed, first].compactMap { $0 }.reduced()
     }
 
+    // MARK: - Command Mode
+
+    /// Hold a second key over selected text and say what to do to it.
+    ///
+    /// Its own switch rather than something always on, because it installs a second event
+    /// tap on a second modifier key — and a modifier that quietly stops behaving like itself
+    /// is worse than a missing feature for anyone who was already using it for something.
+    var commandModeEnabled: Bool {
+        didSet { defaults.set(commandModeEnabled, forKey: Keys.commandModeEnabled) }
+    }
+
+    /// Which key holds Command Mode open.
+    ///
+    /// Never the same key as `pushToTalkKey`. Two taps on one key both fire, in an
+    /// unspecified order, and the loser is swallowed by the idle guard with nothing on
+    /// screen explaining it — so the collision is resolved here rather than left to whoever
+    /// notices. `commandModeIsUsable` is the question every caller should ask.
+    var commandKey: PushToTalkKey {
+        didSet { defaults.set(commandKey.rawValue, forKey: Keys.commandKey) }
+    }
+
+    /// Whether Command Mode is both switched on and bound to a key of its own.
+    var commandModeIsUsable: Bool {
+        commandModeEnabled && commandKey != pushToTalkKey
+    }
+
     /// Let the on-device model repair grammar as well as clean up, at the cost of being
     /// allowed to change words.
     ///
@@ -165,6 +191,8 @@ final class Settings {
         static let autoSignOff = "autoSignOff"
         static let userName = "userName"
         static let polishEnabled = "polishEnabled"
+        static let commandModeEnabled = "commandModeEnabled"
+        static let commandKey = "commandKey"
     }
 
     private init() {
@@ -191,6 +219,12 @@ final class Settings {
         userName = defaults.string(forKey: Keys.userName) ?? NSFullUserName()
         // Off by default: the only pass allowed to write a word the speaker didn't say.
         polishEnabled = defaults.object(forKey: Keys.polishEnabled) as? Bool ?? false
+
+        commandModeEnabled = defaults.object(forKey: Keys.commandModeEnabled) as? Bool ?? true
+        // Right ⌥ by default because push-to-talk defaults to Right ⌘: the two ship on
+        // different keys, and neither default swallows anything the system already uses.
+        let commandRaw = defaults.string(forKey: Keys.commandKey) ?? PushToTalkKey.rightOption.rawValue
+        commandKey = PushToTalkKey(rawValue: commandRaw) ?? .rightOption
     }
 }
 
