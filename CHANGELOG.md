@@ -1,7 +1,7 @@
 # Changelog
 
-What changed in each release, in plain words. The website's "What's new" section mirrors
-the latest entries — update both when you release.
+What changed in each release, in plain words. When you release, copy the new entry into
+the GitHub release notes, and point the pill in `docs/index.html`'s hero at the new tag.
 
 ## 0.3.1 — Bluetooth headphones fix
 
