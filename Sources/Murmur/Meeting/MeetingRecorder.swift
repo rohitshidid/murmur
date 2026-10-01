@@ -1,3 +1,4 @@
+import MurmurAudio
 import AVFoundation
 import FluidAudio
 import Foundation
@@ -80,7 +81,7 @@ final class MeetingRecorder {
 
                 try mic.start(
                     outputFormat: format,
-                    deviceID: AudioDevices.device(uid: Settings.shared.inputDeviceUID)?.id,
+                    preferredDeviceUID: Settings.shared.inputDeviceUID,
                     onBuffer: { [tracks] chunk in tracks.appendMic(chunk.buffer) },
                     onLevel: { [weak self] level in
                         Task { @MainActor in self?.level = level }
@@ -93,14 +94,18 @@ final class MeetingRecorder {
                 return
             }
 
-            // A device change stops the mic engine outright. Finish with what was
-            // captured rather than leaving a recording running that records nothing.
-            mic.onConfigurationChange = { [weak self] in
-                MainActor.assumeIsolated {
-                    guard let self, self.state.isRecording else { return }
-                    Log.audio.info("audio device changed mid-meeting — finishing early")
-                    self.stop()
-                }
+            // Device changes are repaired inside both captures — headphones connecting or
+            // dropping no longer end a meeting. These run only when repair failed: finish
+            // with what was captured rather than keep a recording that records nothing.
+            mic.onFailure = { [weak self] _ in
+                guard let self, self.state.isRecording else { return }
+                Log.audio.info("microphone lost mid-meeting — finishing early")
+                self.stop()
+            }
+            system.onFailure = { [weak self] _ in
+                guard let self, self.state.isRecording else { return }
+                Log.audio.info("system audio lost mid-meeting — finishing early")
+                self.stop()
             }
 
             startedAt = Date()

@@ -27,11 +27,30 @@ let package = Package(
             path: "Sources/MurmurFormatting",
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
+        // Microphone and system-audio capture. Its own target so the device-recovery logic
+        // can be checked without the app, and so `MurmurAudioCheck` can drive the real
+        // capture against real hardware — the only way a Bluetooth bug is ever reproduced.
+        .target(
+            name: "MurmurAudio",
+            path: "Sources/MurmurAudio",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        // `swift run MurmurAudioCheck` — the device-recovery checks (no hardware, runs in
+        // CI) and, with `--hardware`, live capture against the Mac's actual devices.
+        // An executable rather than a test target because swift-testing ships with Xcode,
+        // and this has to run on a machine with only the Command Line Tools.
+        .executableTarget(
+            name: "MurmurAudioCheck",
+            dependencies: ["MurmurAudio"],
+            path: "Sources/MurmurAudioCheck",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
         .executableTarget(
             name: "Murmur",
             dependencies: [
                 "MurmurDictionary",
                 "MurmurFormatting",
+                "MurmurAudio",
                 .product(name: "FluidAudio", package: "FluidAudio"),
             ],
             path: "Sources/Murmur",

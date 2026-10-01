@@ -157,9 +157,16 @@ permission is a hard requirement rather than a nicety.
 single task. Spawning a `Task` per buffer would be simpler and would silently corrupt the
 transcript, because unstructured tasks have no ordering guarantee.
 
-**Buffers are copied, never borrowed.** `AVAudioEngine` recycles the buffer it hands to a
-tap the instant the callback returns. `AudioChunk`'s `@unchecked Sendable` is only sound
-because `AudioCapture` always allocates fresh storage before handing off.
+**Buffers are copied, never borrowed.** The capture renders into one buffer it reuses on
+every callback. `AudioChunk`'s `@unchecked Sendable` is only sound because `AudioCapture`
+always allocates fresh storage before handing off.
+
+**The microphone is opened on its own, not through `AVAudioEngine`.** On macOS the engine
+ties input to the output device, so with Bluetooth headphones on, every recording depended
+on them — and their switch into headset mode crashed the app. `MurmurAudio` uses an
+input-only HAL audio unit and repairs itself when a device changes, reopening the right
+microphone into the same stream. `swift run MurmurAudioCheck --hardware` tests it against
+the Mac's real devices.
 
 **Two swappable seams.** `TranscriptionEngine` and `TextFormatter` are protocols so the
 two components most likely to change can change without touching anything else.
@@ -194,7 +201,6 @@ Sources/Murmur/
 ├── Core/
 │   ├── DictationController.swift   state machine, wires everything
 │   ├── HotkeyMonitor.swift         CGEventTap on .flagsChanged
-│   ├── AudioCapture.swift          AVAudioEngine tap + format conversion + RMS
 │   ├── FieldHarvester.swift        which field, and what's before the caret
 │   └── TextInjector.swift          AX insert, pasteboard+⌘V fallback
 ├── Transcription/
@@ -210,6 +216,13 @@ Sources/Murmur/
 │   └── HUDView.swift               waveform + live transcript, Brand palette
 └── Support/
     ├── Settings.swift, Permissions.swift, Log.swift
+
+Sources/MurmurAudio/               mic + system-audio capture, self-repairing on device changes
+├── AudioCapture.swift              owns the input unit, watches the device, recovers
+├── InputUnit.swift                 input-only HAL unit + format conversion + RMS
+├── CaptureRecovery.swift           pure recovery rules (checked by MurmurAudioCheck)
+├── AudioDevices.swift              enumerate and resolve microphones
+└── SystemAudioCapture.swift        CoreAudio process tap, for meetings
 
 Sources/MurmurFormatting/          platform-neutral, spec'd by shared/ vectors
 ├── StructurePass.swift             the two halves, in order
@@ -314,7 +327,7 @@ what the feature is for.
 
 1. **File transcription.** Drop an audio or video file and get a transcript. The engine
    protocol needs no changes — only a reader that yields `AudioChunk`s from `AVAssetReader`
-   instead of `AVAudioEngine`.
+   instead of the microphone.
 2. **Multilingual.** `AppleSpeechEngine` pins `Locale.current` at init; per-utterance
    language choice and auto-detection are not wired up.
 3. **Onboarding.** A first-run window that walks through the permissions instead of

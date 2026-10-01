@@ -104,13 +104,37 @@ reports granted while `CGEvent.tapCreate` still returns nil. The old loop exited
 push-to-talk was working while the key did nothing. Ask whether the tap exists; nothing else
 can be trusted. Both monitors `stop()` before they start, so polling `activate()` is safe.
 
-**A device change within 750ms of capture opening restarts capture instead of ending the
-utterance.** It looks like a missing early-exit and is the opposite. On a Mac with a
-Bluetooth device attached the change lands ~130ms after `capture.start` returns — that is the
-input settling, not the user unplugging anything, and cancelling costs a sentence already
-being spoken. The restart reuses the **same** `audioContinuation` on purpose: a fresh stream
-would reorder the utterance rather than repair it. One restart per utterance, so a device
-that genuinely goes away still ends it.
+**Microphone capture is a HAL audio unit, not `AVAudioEngine`. Don't "simplify" it back.**
+On macOS the engine's input and output share one I/O unit, so whenever the mic and the
+default output differ — Bluetooth headphones on, any mic selected — it silently builds an
+aggregate of the two, and every recording depends on the headphones. They switch between
+music and headset mode as microphones open, the aggregate reconfigures, and the engine then
+(a) posts `AVAudioEngineConfigurationChange`, (b) reports its input format from the
+*output* device, so the next `installTap` raises "format mismatch" — an Objective-C
+exception Swift can't catch, so the app aborts — and (c) can call a torn-down callback on
+`com.apple.audio.IOThread.client` (`EXC_BAD_ACCESS` at 0). All three were reproduced with
+AirPods Pro. `InputUnit` has its output side disabled and never touches an output device.
+
+**Device changes are repaired inside `AudioCapture`, and callers only hear about failure.**
+A format change, a vanished device or a stalled one closes the unit, waits (backing off),
+reopens whichever device `AudioDevices.resolve` picks *now*, and keeps delivering into the
+same `onBuffer` — so the engine sees a gap of a few hundred ms, not an error. `onFailure`
+fires only after `RecoveryPolicy` gives up (5 tries in 15s). This replaced a 750ms "settle
+window" in `DictationController` that guessed which changes were the headphones settling.
+`SystemAudioCapture` rebuilds its tap the same way when the default output changes.
+
+**Closures handed to CoreAudio from a `@MainActor` type must be `@Sendable`.** Otherwise
+they inherit main-actor isolation, Swift 6 checks it on entry, and the IO thread traps
+(`dispatch_assert_queue` → SIGTRAP) the first time audio flows. The IO proc in
+`SystemAudioCapture` did exactly this during the rewrite; `MurmurAudioCheck --hardware`
+caught it.
+
+**`swift run MurmurAudioCheck` is the audio test suite.** The logic checks need no hardware
+and run in CI. `--hardware` drives real capture on the Mac's actual devices — rapid
+open/close, a live sample-rate switch on the built-in mic, the default output flipping
+under a running mic and system capture — and puts every system setting back afterwards.
+`--interactive` asks you to disconnect Bluetooth headphones mid-recording. Run `--hardware`
+with headphones connected after touching anything in `Sources/MurmurAudio`.
 
 **List inference accepts a cue with only a space in front of it, and the three guards in
 `looseSequenceHolds` are what pay for it.** The old rule required punctuation before every

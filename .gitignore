@@ -20,3 +20,9 @@ artifacts/
 models/
 *.onnx
 *.nemo
+
+# Generated launch-video output (/brag) and any architecture diagrams made for it —
+# local artefacts, not source.
+brag-output/
+architecture/
+*.architecture.html

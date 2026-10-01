@@ -50,6 +50,12 @@ jobs:
       - name: Test the dictionary and formatting targets
         run: swift test --filter VectorTests
 
+      # Device-recovery logic for microphone capture. An executable rather than a test
+      # target so it also runs locally without Xcode; `--hardware` is local-only, since a
+      # runner has no microphone.
+      - name: Audio capture checks
+        run: swift run MurmurAudioCheck
+
       - name: Confirm the vectors on both sides are identical
         run: |
           status=0

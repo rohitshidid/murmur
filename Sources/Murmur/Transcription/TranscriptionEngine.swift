@@ -1,15 +1,6 @@
 import AVFoundation
 import Foundation
-
-/// One buffer of captured audio, in transit from the audio thread to the speech engine.
-///
-/// `AVAudioPCMBuffer` isn't `Sendable`, and `AVAudioEngine` recycles the buffer it hands
-/// to a tap the moment the callback returns. The unchecked conformance is only sound
-/// because `AudioCapture` allocates a **fresh** buffer for every chunk and never touches
-/// it again after handing it over — don't construct one of these around a borrowed buffer.
-struct AudioChunk: @unchecked Sendable {
-    let buffer: AVAudioPCMBuffer
-}
+import MurmurAudio
 
 /// A snapshot of the running transcript.
 ///

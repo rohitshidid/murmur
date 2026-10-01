@@ -1,4 +1,5 @@
 import MurmurDictionary
+import MurmurAudio
 import AVFoundation
 import Foundation
 import Speech

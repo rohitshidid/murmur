@@ -2,28 +2,20 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CFBundleName</key>
-	<string>Murmur</string>
 	<key>CFBundleDisplayName</key>
 	<string>Murmur</string>
-	<!-- Space-free so `pkill -x Murmur` works. Note this NO LONGER guarantees a miss
-	     against another app also called Murmur — the old `MurmurYouTube` name did, and
-	     the rename gave that up deliberately. See the README. -->
 	<key>CFBundleExecutable</key>
 	<string>Murmur</string>
-	<!-- Still distinct from a `com.murmur.client`-style identifier, so TCC grants and
-	     preferences remain this app's own. -->
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>ai.pivotstudio.murmur</string>
+	<key>CFBundleName</key>
+	<string>Murmur</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.3.0</string>
-	<key>CFBundleVersion</key>
-	<string>1</string>
-	<key>CFBundleIconFile</key>
-	<string>AppIcon</string>
-	<!-- `murmur://clear` empties the history — a scriptable hook. -->
+	<string>0.3.1</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -35,21 +27,18 @@
 			</array>
 		</dict>
 	</array>
+	<key>CFBundleVersion</key>
+	<string>1</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>26.0</string>
-	<!-- A regular app: dock icon, app menu, standard windows. The menu bar item remains
-	     for status and the hotkey while you're working elsewhere, but it is secondary. -->
 	<key>LSUIElement</key>
 	<false/>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>Murmur records the audio your Mac is playing so it can transcribe the other people in a meeting.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Murmur listens while you hold the push-to-talk key so it can turn your speech into text.</string>
-	<!-- Meeting mode taps system audio through CoreAudio so it can transcribe the other
-	     participants. Deliberately not ScreenCaptureKit, which would ask for Screen
-	     Recording — a far broader grant than a dictation app has any business holding. -->
-	<key>NSAudioCaptureUsageDescription</key>
-	<string>Murmur records the audio your Mac is playing so it can transcribe the other people in a meeting.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Murmur transcribes your speech on-device to insert text where you're typing.</string>
 </dict>
