@@ -171,6 +171,18 @@ kbd {
 .hero-cta { margin-top: 34px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
 .hero-note { margin-top: 16px; font-size: .82rem; color: var(--ink-faint); }
 .hero-note a { color: var(--ink-faint); text-decoration: underline; text-underline-offset: 2px; }
+/* One line naming the latest release, linking to its notes on GitHub. The changelog
+   itself lives only there. */
+.hero-pill {
+  display: inline-flex; align-items: center; gap: 8px; margin-top: 22px;
+  padding: 5px 13px 5px 6px; border: 1px solid var(--line); border-radius: 999px;
+  font-size: .8rem; color: var(--ink-soft); text-decoration: none; background: #fff;
+}
+.hero-pill b {
+  font-weight: 650; color: var(--indigo); background: var(--bg-tint);
+  padding: 2px 8px; border-radius: 999px;
+}
+.hero-pill:hover { color: var(--ink); }
 /* Filled in from the GitHub releases API; falls back to the static text. */
 #ver { font-variant-numeric: tabular-nums; }
 
@@ -429,7 +441,6 @@ footer { padding: 54px 0 72px; border-top: 1px solid var(--line); background: va
       <a href="#engines" class="opt">Engines</a>
       <a href="#privacy" class="opt">Privacy</a>
       <a href="#install" class="opt">Install</a>
-      <a href="#whats-new" class="opt">What's new</a>
       <a href="https://github.com/rohitshidid/murmur" class="opt">GitHub</a>
       <a class="btn btn-sm btn-fill" href="https://github.com/rohitshidid/murmur/releases/latest/download/Murmur-arm64.dmg">Download</a>
     </div>
@@ -440,19 +451,15 @@ footer { padding: 54px 0 72px; border-top: 1px solid var(--line); background: va
 <header class="hero">
   <div class="wrap">
     <img class="hero-icon reveal" src="icon.png" alt="Murmur icon">
+    <br>
+    <a class="hero-pill reveal" href="https://github.com/rohitshidid/murmur/releases/tag/v0.3.1">
+      <b>v0.3.1</b> Wireless headphones fixed <span class="arrow">→</span>
+    </a>
     <h1 class="reveal" style="--i:1">Hold a key. Talk. Let go.</h1>
     <p class="lede reveal" style="--i:2">
       Push-to-talk dictation for macOS that runs <strong>entirely on your Mac</strong>.
       Cleaned-up text lands in whatever field has focus — and the overlay that shows
       you what you're saying <strong>never takes that focus away</strong>.
-      <br><br>
-      <strong>New in 0.3.1:</strong> works properly with AirPods and other wireless
-      headphones — no more crashes, and no more dictation lost when they connect or
-      switch. <a href="#whats-new">What changed</a>.
-      <br>
-      <strong>New in 0.3:</strong> select text, hold the <em>second</em> key, and say what
-      to do with it — <em>"make this more formal"</em>, <em>"bullet these"</em>. The
-      selection is replaced when you let go.
     </p>
     <div class="hero-cta reveal" style="--i:3">
       <a class="btn btn-lg btn-fill" href="https://github.com/rohitshidid/murmur/releases/latest/download/Murmur-arm64.dmg">
@@ -1142,42 +1149,8 @@ murmur you tube <span class="k">-&gt;</span> murmur-youtube
   </div>
 </section>
 
-<!-- ------------------------------------------------------------ what's new -->
-<!-- Mirrors CHANGELOG.md. Update both when you release. -->
-<section id="whats-new">
-  <div class="wrap">
-    <div class="narrow center sec-head" style="width:100%">
-      <p class="eyebrow reveal">Changelog</p>
-      <h2 class="reveal" style="--i:1">What's new.</h2>
-      <p class="lede reveal" style="--i:2">
-        <strong>0.3.1 fixes wireless headphones.</strong> If Murmur crashed, or told you
-        <em>"Audio device changed"</em>, while your AirPods were connected, update — this
-        is the release that fixes it.
-      </p>
-    </div>
-
-    <ul class="todo narrow" style="width:min(820px,100%);padding:0">
-      <li class="reveal"><b>0.3.1 · Crash fixed</b><span>Recording used to be tied to your headphones' <em>output</em>, even with another microphone selected. Headphones switch modes whenever a mic opens, and that switch could crash Murmur. It now opens the microphone and nothing else.</span></li>
-      <li class="reveal" style="--i:1"><b>0.3.1 · Dictation</b><span>Headphones settling, connecting or disconnecting mid-sentence now cost a fraction of a second of audio, not the whole dictation. If they disconnect, Murmur carries on with the built-in mic.</span></li>
-      <li class="reveal" style="--i:2"><b>0.3.1 · Meetings</b><span>Meeting recordings no longer end early when headphones come or go — your mic and the system-audio track both repair themselves.</span></li>
-      <li class="reveal" style="--i:3"><b>0.3.0</b><span>Command mode: select text, hold the second key, say what to do with it. Spoken lists said in one breath, and spacing around spoken punctuation, fixed.</span></li>
-      <li class="reveal" style="--i:4"><b>0.2.x</b><span>Spoken retraction (<em>"scratch that"</em>), lists and email shape; a banner when Accessibility is missing; more reliable key detection.</span></li>
-    </ul>
-
-    <div class="narrow note reveal" style="width:min(820px,100%)">
-      <h3>Updating from an earlier version</h3>
-      <p>
-        Builds are unsigned, so after updating, remove Murmur from System Settings →
-        Privacy &amp; Security → Accessibility and add it back — <a href="#install">details above</a>.
-        Every release is on <a href="https://github.com/rohitshidid/murmur/releases">GitHub</a>,
-        with the full history in <a href="https://github.com/rohitshidid/murmur/blob/main/CHANGELOG.md">CHANGELOG.md</a>.
-      </p>
-    </div>
-  </div>
-</section>
-
 <!-- ------------------------------------------------------------- final cta -->
-<section class="final tint">
+<section class="final">
   <div class="wrap">
     <h2 class="reveal">Stop typing what you could say.</h2>
     <p class="lede reveal" style="--i:1">Free, readable end to end, and it never sends your voice anywhere.</p>
